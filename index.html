@@ -82,8 +82,21 @@
     .app-card:hover { box-shadow:0 6px 24px rgba(0,0,0,0.07); transform:translateY(-2px); }
     .app-card .img-box { background:var(--white); border-radius:8px; overflow:hidden; display:flex; align-items:center; justify-content:center; min-height:220px; }
     .app-card img { width:100%; display:block; }
-    .app-card h3 { font-size:1rem; font-weight:700; color:var(--slate-800); margin:14px 4px 4px; }
-    .app-card p { font-size:0.86rem; color:var(--slate-500); line-height:1.65; margin:0 4px 4px; }
+    .app-card h3 { font-size:1rem; font-weight:700; color:var(--slate-800); margin:14px 4px 6px; }
+    .res { margin:4px 4px 0 22px; }
+    .res li { font-size:0.86rem; color:var(--slate-500); line-height:1.6; margin-bottom:4px; }
+    .res li strong { color:var(--slate-800); }
+    .mini { width:100%; border-collapse:collapse; font-size:0.82rem; margin:2px 0 8px; font-variant-numeric:tabular-nums; }
+    .mini th { font-weight:600; color:var(--slate-500); text-align:right; padding:4px 6px; border-bottom:1.5px solid var(--slate-300); }
+    .mini th:first-child, .mini td:first-child { text-align:left; }
+    .mini td { text-align:right; padding:3px 6px; color:var(--slate-700); border-bottom:1px solid var(--slate-100); }
+    .mini td.grp { color:var(--slate-400); font-size:0.76rem; font-style:italic; padding-top:6px; }
+    .mini tr.ours td, .mini td.win { color:var(--blue-600); font-weight:700; }
+    section.summary { padding:40px 0 44px; }
+    section.summary .container { max-width:1040px; }
+    .summary-text { text-align:center; font-size:1rem; line-height:1.9; color:var(--slate-700); }
+    .summary-text span { display:block; }
+    @media (max-width:768px) { .summary-text { text-align:left; } .summary-text span { display:inline; } }
 
     pre { background:var(--slate-900); color:var(--slate-300); border-radius:var(--radius-lg); padding:24px; overflow-x:auto; font-size:0.85rem; line-height:1.65; margin-top:16px; }
     code { font-family:'JetBrains Mono','SF Mono',monospace; }
@@ -251,11 +264,15 @@
   </div>
 </header>
 
-<!-- ============ ABSTRACT ============ -->
-<section>
+<!-- ============ SUMMARY ============ -->
+<section class="summary">
   <div class="container">
-    <h2>Abstract</h2>
-    <p class="abstract">Many learning problems require outputs that satisfy hard constraints, such as safety limits and physical laws, exactly at every input. Differentiable projection layers enforce them by construction, but the projection can dominate training and inference cost, and under fixed iterative budgets its gradient degrades as more constraints become tight. We show that, for any projection solver, the implicit-differentiation system is block-triangular with respect to the <em>active manifold</em> defined by the tight constraints, so the backward pass reduces to one solve on its normal and curved tangent directions. Our Active-Set Projection Layer (ASPL) reads this manifold off any forward solver and uses it in both passes: the backward solves only over the tight and curved directions, and the forward projects onto the face while it holds. We prove finite-time identification and a local O(1/T) training rate. On quadratic programs, motion planning, and inverse kinematics on real robot logs, ASPL improves accuracy or cost over existing projection layers and solvers, and it also enforces the constraints in maze planning and flow-matching manipulation.</p>
+    <p class="summary-text">
+      <span>Projection layers enforce hard constraints exactly, but their gradient degrades as more constraints become tight.</span>
+      <span>ASPL differentiates through the <em>active manifold</em>: the backward pass is one small solve on the tight and curved directions.</span>
+      <span>It works with any forward solver, with finite-time identification and a local O(1/T) training rate.</span>
+      <span>It improves accuracy or cost on QPs, motion planning and real-robot IK, and enforces constraints in mazes and flow matching.</span>
+    </p>
   </div>
 </section>
 
@@ -288,8 +305,6 @@
 <!-- ============ BENCHMARKS ============ -->
 <section>
   <div class="container">
-    <h2>Results</h2>
-    <p class="section-sub">Parametric QPs with a controlled active-set ratio, amortized inverse kinematics on real teleoperation logs, and constrained flow matching on RoboTwin&nbsp;2.0. Full results in the <a href="paper.pdf" target="_blank" rel="noopener" style="color:var(--blue-600);">paper</a>.</p>
 
     <div class="bench-tabs-wrap">
       <div class="bench-tabs" role="tablist" aria-label="Benchmark">
@@ -562,31 +577,63 @@
 })();
 </script>
 
-<!-- ============ APPLICATIONS ============ -->
+<!-- ============ APPLICATION RESULTS ============ -->
 <section class="alt">
   <div class="container">
-    <h2>Applications</h2>
-    <p class="section-sub">The same layer, dropped in as the output of a network or applied at inference to a trained policy.</p>
     <div class="app-grid">
       <div class="app-card">
         <div class="img-box"><img src="figs/motion_planning.png" alt="Multi-robot trajectories: Pi-net vs ASPL"/></div>
         <h3>Multi-robot motion planning</h3>
-        <p>Predicted (solid) and ground-truth (dashed) trajectories for 5 robots over 25 steps under workspace, velocity, acceleration, jerk, and collision constraints. &Pi;net drifts from the ground truth; ASPL follows it, and its training time stays flat as more constraints bind.</p>
+        <ul class="res">
+          <li>ASPL follows the ground-truth trajectories where &Pi;net drifts (5 robots, 25 steps, d&nbsp;=&nbsp;770).</li>
+          <li>Position error <strong>orders of magnitude lower</strong> than &Pi;net when few constraints bind; the gap narrows as more of them bind.</li>
+          <li>Training time <strong>stays flat</strong> in the active-set ratio while &Pi;net's climbs (8 robots, 50 steps, d&nbsp;=&nbsp;2,432).</li>
+          <li>16 robots over 100 steps (d&nbsp;=&nbsp;9,664): lower error over most of the horizon at the three largest ratios.</li>
+        </ul>
       </div>
       <div class="app-card">
         <div class="img-box"><img src="figs/ik.png" alt="Inverse kinematics on real teleoperation logs"/></div>
         <h3>Inverse kinematics on real robot logs</h3>
-        <p>Chunk-level differential IK in closed loop on held-out teleoperation logs of a Dexmate Vega-1 and a Unitree G1. ASPL meets the task below 10<sup>&minus;10</sup> on every chunk and solves faster than Clarabel at every chunk length.</p>
+        <table class="mini">
+          <thead><tr><th>closed loop, same bound</th><th>Vega-1</th><th>G1 table</th><th>G1 walk</th></tr></thead>
+          <tbody>
+            <tr><td colspan="4" class="grp">end-effector error (mm)</td></tr>
+            <tr class="ours"><td>ASPL</td><td>0.7</td><td>0.3</td><td>3.4</td></tr>
+            <tr><td>Pink</td><td>21.2</td><td>56.6</td><td>1.1</td></tr>
+            <tr><td>clip to limits</td><td>17.3</td><td>58.2</td><td>86.9</td></tr>
+            <tr><td colspan="4" class="grp">acceleration above bound (rad/s&sup2;)</td></tr>
+            <tr class="ours"><td>ASPL</td><td>0</td><td>0</td><td>72</td></tr>
+            <tr><td>Pink</td><td>68</td><td>638</td><td>56</td></tr>
+          </tbody>
+        </table>
+        <ul class="res">
+          <li>Task met below <strong>10<sup>&minus;10</sup></strong> on every chunk; batched, faster than Clarabel at every chunk length.</li>
+        </ul>
       </div>
       <div class="app-card">
         <div class="img-box"><img src="figs/maze.png" alt="Maze: GCS vs ASPL"/></div>
         <h3>Maze trajectory planning</h3>
-        <p>An MLP maps start and goal to B&eacute;zier control points; ASPL projects them onto the corridor polytope with pinned endpoints and continuity at every junction. Every output stays inside the corridor, on fixed and on new mazes, at tens of milliseconds per query.</p>
+        <ul class="res">
+          <li><strong>Every test output</strong> stays inside the corridor, with the endpoints pinned.</li>
+          <li>Control points within <strong>a few percent</strong> of the fixed-path optimum; curves slightly longer than optimal.</li>
+          <li>On new mazes (sizes 10 to 30), about as accurate as on the training maze, at <strong>tens of milliseconds</strong> per query.</li>
+        </ul>
       </div>
       <div class="app-card">
         <div class="img-box"><img src="figs/robotwin_tasks.png" alt="RoboTwin 2.0 bimanual tasks"/></div>
-        <h3>Constrained flow matching</h3>
-        <p>Applied at inference to every action chunk of a ManiFlow policy on RoboTwin&nbsp;2.0: joint-position, velocity and acceleration bounds plus a smooth hand-over between chunks hold for every executed chunk, and success never drops.</p>
+        <h3>Constrained flow matching (RoboTwin&nbsp;2.0)</h3>
+        <table class="mini">
+          <thead><tr><th>success (100 episodes)</th><th>ManiFlow</th><th>+ ASPL</th></tr></thead>
+          <tbody>
+            <tr><td>lift_pot</td><td>64</td><td class="win">64</td></tr>
+            <tr><td>open_laptop</td><td>50</td><td class="win">50</td></tr>
+            <tr><td>pick_dual_bottles</td><td>68</td><td class="win">72</td></tr>
+            <tr><td>put_object_cabinet</td><td>23</td><td class="win">27</td></tr>
+          </tbody>
+        </table>
+        <ul class="res">
+          <li>Every executed chunk meets the joint, velocity and acceleration bounds, and success <strong>never drops</strong>.</li>
+        </ul>
       </div>
     </div>
   </div>
