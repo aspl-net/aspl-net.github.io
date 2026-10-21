@@ -304,7 +304,7 @@
       <span>Projection layers enforce hard constraints exactly, but their gradient degrades as more constraints become tight.</span>
       <span>ASPL differentiates through the <em>active manifold</em>: the backward pass is one small solve on the tight and curved directions.</span>
       <span>It works with any forward solver, with finite-time identification and a local O(1/T) training rate.</span>
-      <span>It improves accuracy or cost on QPs, motion planning and real-robot IK, and enforces constraints in mazes and flow matching.</span>
+      <span>It improves accuracy or cost on QPs, motion planning and real-robot IK, and enforces constraints in flow matching.</span>
     </p>
   </div>
 </section>
@@ -651,20 +651,6 @@
         </table>
         <ul class="res">
           <li>Held-out real logs, closed loop. Task error median about <strong>10<sup>&minus;13</sup></strong>; batched, faster than Clarabel at every chunk length.</li>
-        </ul>
-        </div>
-      </div>
-      <div class="app-card">
-        <div class="img-box"><video class="square" src="media/maze.mp4" poster="media/maze.jpg" autoplay muted loop playsinline aria-label="ASPL trajectories drawn through new mazes"></video></div>
-        <div class="app-body">
-        <h3>Maze trajectory planning</h3>
-        <ul class="res">
-          <li>An MLP maps start and goal to B&eacute;zier control points; ASPL projects them onto the corridor of the cell path, with smooth junctions.</li>
-          <li><strong>Every test output</strong> stays inside the corridor.</li>
-        </ul>
-        <ul class="res">
-          <li>Control points within <strong>a few percent</strong> of the fixed-path optimum; curves slightly longer than optimal.</li>
-          <li>On <strong>new mazes</strong>, about as accurate as on the training maze, at tens of milliseconds per query.</li>
         </ul>
         </div>
       </div>
