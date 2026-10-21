@@ -85,6 +85,7 @@
     .app-card .img-box { display:flex; align-items:center; justify-content:center; min-height:220px; }
     .app-card img, .app-card video { width:100%; display:block; mix-blend-mode:multiply; }
     .app-card video.rollout { mix-blend-mode:normal; border-radius:8px; }
+    .app-card video.square { max-width:520px; margin:0 auto; }
     .fm-tabs { margin:10px 0 0; }
     .app-card h3 { font-size:1rem; font-weight:700; color:var(--slate-800); margin:14px 4px 6px; }
     .res { margin:4px 4px 0 22px; }
@@ -586,14 +587,16 @@
   <div class="container">
     <div class="app-grid">
       <div class="app-card">
-        <div class="img-box"><img src="figs/motion_planning.png" alt="Multi-robot trajectories: Pi-net vs ASPL"/></div>
+        <div class="img-box"><video src="media/mp_r5h25.mp4" poster="media/mp_r5h25.jpg" autoplay muted loop playsinline aria-label="Five robots: Pi-net (left) and ASPL (right) predicted trajectories against the ground truth"></video></div>
         <div class="app-body">
         <h3>Multi-robot motion planning</h3>
         <ul class="res">
-          <li>ASPL follows the ground-truth trajectories where &Pi;net drifts (5 robots, 25 steps, d&nbsp;=&nbsp;770).</li>
-          <li>Position error <strong>orders of magnitude lower</strong> than &Pi;net when few constraints bind; the gap narrows as more of them bind.</li>
+          <li>Five robots over 25 steps under workspace, velocity, acceleration, jerk and collision constraints: ASPL follows the ground-truth trajectories (dashed) where &Pi;net drifts.</li>
           <li>Training time <strong>stays flat</strong> in the active-set ratio while &Pi;net's climbs (8 robots, 50 steps, d&nbsp;=&nbsp;2,432).</li>
-          <li>16 robots over 100 steps (d&nbsp;=&nbsp;9,664): lower error over most of the horizon at the three largest ratios.</li>
+        </ul>
+        <ul class="res">
+          <li>16 robots over 100 steps (d&nbsp;=&nbsp;9,664): ASPL's position error stays below &Pi;net's over most of the horizon.</li>
+          <li>Every output is feasible: the projection enforces all constraints exactly.</li>
         </ul>
         </div>
       </div>
@@ -624,13 +627,16 @@
         </div>
       </div>
       <div class="app-card">
-        <div class="img-box"><img src="figs/maze.png" alt="Maze: GCS vs ASPL"/></div>
+        <div class="img-box"><video class="square" src="media/maze.mp4" poster="media/maze.jpg" autoplay muted loop playsinline aria-label="ASPL trajectories drawn through new mazes"></video></div>
         <div class="app-body">
         <h3>Maze trajectory planning</h3>
         <ul class="res">
-          <li><strong>Every test output</strong> stays inside the corridor, with the endpoints pinned.</li>
+          <li>An MLP maps start and goal to B&eacute;zier control points; ASPL projects them onto the corridor of the cell path, with smooth junctions.</li>
+          <li><strong>Every test output</strong> stays inside the corridor.</li>
+        </ul>
+        <ul class="res">
           <li>Control points within <strong>a few percent</strong> of the fixed-path optimum; curves slightly longer than optimal.</li>
-          <li>On new mazes (sizes 10 to 30), about as accurate as on the training maze, at <strong>tens of milliseconds</strong> per query.</li>
+          <li>On <strong>new mazes</strong>, about as accurate as on the training maze, at tens of milliseconds per query.</li>
         </ul>
         </div>
       </div>
