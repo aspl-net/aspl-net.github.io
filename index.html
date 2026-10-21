@@ -81,6 +81,8 @@
     .app-card { display:flex; flex-direction:column; }
     .app-card .img-box { display:flex; align-items:center; justify-content:center; min-height:220px; }
     .app-card img, .app-card video { width:100%; display:block; mix-blend-mode:multiply; }
+    .app-card video.rollout { mix-blend-mode:normal; border-radius:8px; }
+    .fm-tabs { margin:10px 0 0; }
     .app-card h3 { font-size:1rem; font-weight:700; color:var(--slate-800); margin:14px 4px 6px; }
     .res { margin:4px 4px 0 22px; }
     .res li { font-size:0.86rem; color:var(--slate-500); line-height:1.6; margin-bottom:4px; }
@@ -619,7 +621,13 @@
         </ul>
       </div>
       <div class="app-card">
-        <div class="img-box"><img src="figs/robotwin_tasks.png" alt="RoboTwin 2.0 bimanual tasks"/></div>
+        <div class="img-box"><video id="fm-video" class="rollout" src="media/fm_pick_dual_bottles.mp4" poster="media/fm_pick_dual_bottles.jpg" autoplay muted loop playsinline aria-label="ManiFlow (left) and ManiFlow + ASPL (right) on the same episode"></video></div>
+        <div class="subtabs fm-tabs" id="fm-tabs">
+          <button class="st-btn" data-task="lift_pot">lift_pot</button>
+          <button class="st-btn" data-task="open_laptop">open_laptop</button>
+          <button class="st-btn active" data-task="pick_dual_bottles">pick_dual_bottles</button>
+          <button class="st-btn" data-task="put_object_cabinet">put_object_cabinet</button>
+        </div>
         <h3>Constrained flow matching (RoboTwin&nbsp;2.0)</h3>
         <table class="mini">
           <thead><tr><th>success (100 episodes)</th><th>ManiFlow</th><th>+ ASPL</th></tr></thead>
@@ -631,7 +639,7 @@
           </tbody>
         </table>
         <ul class="res">
-          <li>Every executed chunk meets the joint, velocity and acceleration bounds, and success <strong>never drops</strong>.</li>
+          <li>Same episode, left ManiFlow, right ManiFlow + ASPL. Success <strong>never drops</strong> on any task and rises by 4 on two.</li>
         </ul>
       </div>
     </div>
@@ -683,5 +691,18 @@ pip install -e <span class="string">"aspl[cuda]"</span>
   <p>ASPL <span class="sep">·</span><a href="paper.pdf" target="_blank" rel="noopener">Paper</a> <span class="sep">·</span><a href="https://huggingface.co/ASLP-Net/ASPL">Code</a> <span class="sep">·</span><a href="https://huggingface.co/datasets/ASLP-Net/ASPL-data">Data</a></p>
   <p style="margin-top:8px;opacity:0.6;">Contact: tarzanagh [at] gmail [dot] com</p>
 </footer>
+<script>
+(function(){
+  const v = document.getElementById("fm-video");
+  document.querySelectorAll("#fm-tabs .st-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("#fm-tabs .st-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      const t = btn.dataset.task;
+      v.poster = `media/fm_${t}.jpg`; v.src = `media/fm_${t}.mp4`; v.play().catch(() => {});
+    });
+  });
+})();
+</script>
 </body>
 </html>
