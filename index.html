@@ -430,14 +430,16 @@
       groups: ["lift_pot", "open_laptop", "pick_dual_bottles", "put_object_cabinet"],
       seriesNames: ["ManiFlow", "ManiFlow + ASPL"],
       colors: [C.base, C.aspl],
-      sub: { SR:"Success rate" },
+      sub: { SR:"Success rate", Vel:"Velocity vs. bound" },
       subDefault: "SR",
-      metricLabel: { SR:"success rate (%)" },
-      subtitle: { SR:"RoboTwin 2.0 bimanual tasks · 100 fixed episodes per task" },
-      series: { SR: [[64,64],[50,50],[68,72],[23,27]] },
-      yRange: { SR:[0,100] },
+      metricLabel: { SR:"success rate (%)", Vel:"largest velocity / bound" },
+      subtitle: { SR:"RoboTwin 2.0 · same checkpoint, same 100 fixed episodes per task", Vel:"RoboTwin 2.0 · largest executed joint velocity relative to its bound (1 = at the bound)" },
+      series: { SR: [[64,59],[50,49],[68,68],[23,24]], Vel: [[1.31,1.0003],[1.80,1.0007],[1.41,1.0],[1.51,1.0001]] },
+      yRange: { SR:[0,100], Vel:[0,2] },
+      fmt: { Vel: v => v.toFixed(2) },
       caption: {
-        SR: "Same 100 fixed episodes per task. Success never drops, and rises by 4 on pick_dual_bottles and put_object_cabinet (one training and one evaluation seed).",
+        SR: "Projection on and off for the same policy; the evaluation is deterministic, so every difference comes from the projection. 200 vs. 205 successes out of 400.",
+        Vel: "Raw chunks exceed the velocity bound by up to 80% and leave the joint box in 30–78% of chunks; projected chunks stay within 0.1% of the velocity bound.",
       }
     }
   };
@@ -461,7 +463,7 @@
     return String(n).split("").map(c => m[c] || c).join("");
   }
   function fmtTick(v, log) {
-    if (!log) return v.toFixed(0);
+    if (!log) return Number.isInteger(v) ? v.toFixed(0) : v.toFixed(1);
     const e = Math.round(Math.log10(v));
     if (e >= 0 && e <= 4) return String(Math.pow(10, e));
     return "10" + sup(e);
@@ -555,8 +557,8 @@
       const x0 = padL + slot * gi + (slot - bw * k - 4) / 2;
       cfg.series[sub][gi].forEach((v, si) => {
         const bx = x0 + si * (bw + 4), top = y(v);
-        s += `<rect class="grow" style="animation-delay:${gi * 0.15 + si * 0.08}s" x="${bx}" y="${top}" width="${bw}" height="${padT + plotH - top}" rx="3" fill="${cfg.colors[si]}"><title>${cfg.seriesNames[si]}: ${v}%</title></rect>`;
-        s += `<text x="${bx + bw/2}" y="${top - 8}" text-anchor="middle" fill="#0f172a" font-size="13" font-weight="700" ${FONT}>${v}</text>`;
+        s += `<rect class="grow" style="animation-delay:${gi * 0.15 + si * 0.08}s" x="${bx}" y="${top}" width="${bw}" height="${padT + plotH - top}" rx="3" fill="${cfg.colors[si]}"><title>${cfg.seriesNames[si]}: ${v}</title></rect>`;
+        s += `<text x="${bx + bw/2}" y="${top - 8}" text-anchor="middle" fill="#0f172a" font-size="13" font-weight="700" ${FONT}>${cfg.fmt && cfg.fmt[sub] ? cfg.fmt[sub](v) : v}</text>`;
       });
       s += `<text x="${padL + slot * gi + slot/2}" y="${padT + plotH + 22}" text-anchor="middle" fill="#334155" font-size="12" ${FONT}>${g.replace(/_/g, "_​")}</text>`;
     });
@@ -679,16 +681,22 @@
         <div class="app-body">
         <h3>Constrained flow matching (RoboTwin&nbsp;2.0)</h3>
         <table class="mini">
-          <thead><tr><th>success (100 episodes)</th><th>ManiFlow</th><th>+ ASPL</th></tr></thead>
+          <thead><tr><th>same checkpoint, 100 episodes</th><th>ManiFlow</th><th>+ ASPL</th></tr></thead>
           <tbody>
-            <tr><td>lift_pot</td><td>64</td><td class="win">64</td></tr>
-            <tr><td>open_laptop</td><td>50</td><td class="win">50</td></tr>
-            <tr><td>pick_dual_bottles</td><td>68</td><td class="win">72</td></tr>
-            <tr><td>put_object_cabinet</td><td>23</td><td class="win">27</td></tr>
+            <tr><td colspan="3" class="grp">success</td></tr>
+            <tr><td>lift_pot</td><td>64</td><td class="win">59</td></tr>
+            <tr><td>open_laptop</td><td>50</td><td class="win">49</td></tr>
+            <tr><td>pick_dual_bottles</td><td>68</td><td class="win">68</td></tr>
+            <tr><td>put_object_cabinet</td><td>23</td><td class="win">24</td></tr>
+            <tr><td colspan="3" class="grp">all four tasks, executed chunks</td></tr>
+            <tr><td>largest joint-box violation (rad)</td><td>0.066</td><td class="win">0.0015</td></tr>
+            <tr><td>largest velocity / bound</td><td>1.80</td><td class="win">1.001</td></tr>
+            <tr><td>first action vs. current state (rad)</td><td>0.48</td><td class="win">0</td></tr>
           </tbody>
         </table>
         <ul class="res">
-          <li>Same episode, left ManiFlow, right ManiFlow + ASPL. Success <strong>never drops</strong> on any task and rises by 4 on two.</li>
+          <li>The projection is applied at inference to every action chunk of the same trained policy: joint, velocity and acceleration bounds, and the first action pinned to the current joint state.</li>
+          <li>Raw ManiFlow chunks leave the joint box in 30&ndash;78% of chunks and start up to 0.48&nbsp;rad away from the robot's current state. With ASPL the chunks meet the joint and velocity bounds up to the solver tolerance (acceleration within 11%), and success stays about the same: 200 vs. 205 of 400.</li>
         </ul>
         </div>
       </div>
