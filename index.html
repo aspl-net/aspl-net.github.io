@@ -77,7 +77,10 @@
     .card p { font-size:0.9rem; color:var(--slate-500); line-height:1.7; }
     .card p strong { color:var(--slate-800); }
 
-    .app-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+    .app-grid { display:grid; grid-template-columns:1fr; gap:56px; }
+    .app-card .app-body { display:grid; grid-template-columns:1fr 1fr; gap:8px 32px; align-items:start; margin-top:4px; }
+    .app-card .app-body > h3 { grid-column:1 / -1; }
+    @media (max-width:768px) { .app-card .app-body { grid-template-columns:1fr; } }
     .app-card { display:flex; flex-direction:column; }
     .app-card .img-box { display:flex; align-items:center; justify-content:center; min-height:220px; }
     .app-card img, .app-card video { width:100%; display:block; mix-blend-mode:multiply; }
@@ -584,6 +587,7 @@
     <div class="app-grid">
       <div class="app-card">
         <div class="img-box"><img src="figs/motion_planning.png" alt="Multi-robot trajectories: Pi-net vs ASPL"/></div>
+        <div class="app-body">
         <h3>Multi-robot motion planning</h3>
         <ul class="res">
           <li>ASPL follows the ground-truth trajectories where &Pi;net drifts (5 robots, 25 steps, d&nbsp;=&nbsp;770).</li>
@@ -591,9 +595,16 @@
           <li>Training time <strong>stays flat</strong> in the active-set ratio while &Pi;net's climbs (8 robots, 50 steps, d&nbsp;=&nbsp;2,432).</li>
           <li>16 robots over 100 steps (d&nbsp;=&nbsp;9,664): lower error over most of the horizon at the three largest ratios.</li>
         </ul>
+        </div>
       </div>
       <div class="app-card">
-        <div class="img-box"><img src="figs/ik.png" alt="Inverse kinematics on real teleoperation logs"/></div>
+        <div class="img-box"><video id="ik-video" src="media/ik_g1_walk.mp4" poster="media/ik_g1_walk.jpg" autoplay muted loop playsinline aria-label="Closed-loop IK: head camera, operator command, and ASPL with the per-frame end-effector error"></video></div>
+        <div class="subtabs fm-tabs" id="ik-tabs">
+          <button class="st-btn" data-clip="vega">Vega-1</button>
+          <button class="st-btn" data-clip="g1_table">G1 table</button>
+          <button class="st-btn active" data-clip="g1_walk">G1 walking</button>
+        </div>
+        <div class="app-body">
         <h3>Inverse kinematics on real robot logs</h3>
         <table class="mini">
           <thead><tr><th>closed loop, same bound</th><th>Vega-1</th><th>G1 table</th><th>G1 walk</th></tr></thead>
@@ -608,17 +619,20 @@
           </tbody>
         </table>
         <ul class="res">
-          <li>Task met below <strong>10<sup>&minus;10</sup></strong> on every chunk; batched, faster than Clarabel at every chunk length.</li>
+          <li>Held-out real logs, closed loop. Task error median about <strong>10<sup>&minus;13</sup></strong>; batched, faster than Clarabel at every chunk length.</li>
         </ul>
+        </div>
       </div>
       <div class="app-card">
         <div class="img-box"><img src="figs/maze.png" alt="Maze: GCS vs ASPL"/></div>
+        <div class="app-body">
         <h3>Maze trajectory planning</h3>
         <ul class="res">
           <li><strong>Every test output</strong> stays inside the corridor, with the endpoints pinned.</li>
           <li>Control points within <strong>a few percent</strong> of the fixed-path optimum; curves slightly longer than optimal.</li>
           <li>On new mazes (sizes 10 to 30), about as accurate as on the training maze, at <strong>tens of milliseconds</strong> per query.</li>
         </ul>
+        </div>
       </div>
       <div class="app-card">
         <div class="img-box"><video id="fm-video" class="rollout" src="media/fm_pick_dual_bottles.mp4" poster="media/fm_pick_dual_bottles.jpg" autoplay muted loop playsinline aria-label="ManiFlow (left) and ManiFlow + ASPL (right) on the same episode"></video></div>
@@ -628,6 +642,7 @@
           <button class="st-btn active" data-task="pick_dual_bottles">pick_dual_bottles</button>
           <button class="st-btn" data-task="put_object_cabinet">put_object_cabinet</button>
         </div>
+        <div class="app-body">
         <h3>Constrained flow matching (RoboTwin&nbsp;2.0)</h3>
         <table class="mini">
           <thead><tr><th>success (100 episodes)</th><th>ManiFlow</th><th>+ ASPL</th></tr></thead>
@@ -641,6 +656,7 @@
         <ul class="res">
           <li>Same episode, left ManiFlow, right ManiFlow + ASPL. Success <strong>never drops</strong> on any task and rises by 4 on two.</li>
         </ul>
+        </div>
       </div>
     </div>
   </div>
@@ -693,6 +709,15 @@ pip install -e <span class="string">"aspl[cuda]"</span>
 </footer>
 <script>
 (function(){
+  const iv = document.getElementById("ik-video");
+  document.querySelectorAll("#ik-tabs .st-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("#ik-tabs .st-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      const c = btn.dataset.clip;
+      iv.poster = `media/ik_${c}.jpg`; iv.src = `media/ik_${c}.mp4`; iv.play().catch(() => {});
+    });
+  });
   const v = document.getElementById("fm-video");
   document.querySelectorAll("#fm-tabs .st-btn").forEach(btn => {
     btn.addEventListener("click", () => {
