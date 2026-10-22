@@ -98,7 +98,6 @@
     .app-card img, .app-card video { width:100%; display:block; mix-blend-mode:multiply; }
     .app-card video.rollout { mix-blend-mode:normal; border-radius:8px; }
     .app-card video.square { max-width:520px; margin:0 auto; }
-    .fm-tabs { margin:10px 0 0; }
     .app-card h3 { font-size:1rem; font-weight:700; color:var(--slate-800); margin:14px 4px 6px; }
     .res { margin:4px 4px 0 22px; }
     .res li { font-size:0.86rem; color:var(--slate-500); line-height:1.6; margin-bottom:4px; }
@@ -135,15 +134,6 @@
     @media (max-width:860px) { .mini-grid { grid-template-columns:1fr; } }
     .bench-header h3 { font-size:1.25rem; font-weight:700; color:var(--slate-800); margin:0; }
     .bench-header p  { font-size:0.88rem; color:var(--slate-500); margin:4px 0 0; }
-    .subtabs { display:flex; flex-wrap:wrap; justify-content:center; gap:6px; margin:14px 0 4px; }
-    .st-btn {
-      font-family:inherit; font-size:0.82rem; font-weight:500;
-      padding:5px 12px; border-radius:999px;
-      background:transparent; color:var(--slate-500);
-      border:1px solid var(--slate-200); cursor:pointer; transition:all 0.15s;
-    }
-    .st-btn:hover { border-color:var(--blue-300); color:var(--blue-600); }
-    .st-btn.active { background:var(--blue-50); color:var(--blue-600); border-color:var(--blue-300); }
     .chart-box { margin:6px auto 0; max-width:680px; }
     .bt-chart { width:100%; height:auto; display:block; }
     .bt-chart .draw { stroke-dasharray:1; stroke-dashoffset:1; animation:drawLine 1.4s ease-out forwards; }
@@ -353,11 +343,16 @@
     <h2>Inverse Kinematics for Robot Teleoperation</h2>
     <div class="app-grid">
       <div class="app-card">
-        <div class="img-box"><video id="ik-video" src="media/ik_g1_walk.mp4" poster="media/ik_g1_walk.jpg" autoplay muted loop playsinline aria-label="Closed-loop IK: head camera, operator command, and ASPL with the per-frame end-effector error"></video></div>
-        <div class="subtabs fm-tabs" id="ik-tabs">
-          <button class="st-btn" data-clip="vega">Vega-1</button>
-          <button class="st-btn" data-clip="g1_table">G1 table</button>
-          <button class="st-btn active" data-clip="g1_walk">G1 walking</button>
+        <div class="mini-grid">
+          <div class="mini-chart"><div class="mini-head"><h4>Vega-1</h4></div>
+            <div class="img-box"><video class="rollout" src="media/ik_vega.mp4" poster="media/ik_vega.jpg" autoplay muted loop playsinline aria-label="Closed-loop IK on Vega-1: head camera, operator command, and ASPL with the per-frame end-effector error"></video></div>
+          </div>
+          <div class="mini-chart"><div class="mini-head"><h4>G1 table</h4></div>
+            <div class="img-box"><video class="rollout" src="media/ik_g1_table.mp4" poster="media/ik_g1_table.jpg" autoplay muted loop playsinline aria-label="Closed-loop IK on G1 at the table: head camera, operator command, and ASPL with the per-frame end-effector error"></video></div>
+          </div>
+          <div class="mini-chart"><div class="mini-head"><h4>G1 walking</h4></div>
+            <div class="img-box"><video class="rollout" src="media/ik_g1_walk.mp4" poster="media/ik_g1_walk.jpg" autoplay muted loop playsinline aria-label="Closed-loop IK on G1 walking: head camera, operator command, and ASPL with the per-frame end-effector error"></video></div>
+          </div>
         </div>
         <div class="app-body">
         <h3>Inverse kinematics on real robot logs</h3>
@@ -397,12 +392,19 @@
     <h2>Constrained Robot Manipulation</h2>
     <div class="app-grid">
       <div class="app-card">
-        <div class="img-box"><video id="fm-video" class="rollout" src="media/fm_pick_dual_bottles.mp4" poster="media/fm_pick_dual_bottles.jpg" autoplay muted loop playsinline aria-label="ManiFlow (left) and ASPL (right) on the same episode"></video></div>
-        <div class="subtabs fm-tabs" id="fm-tabs">
-          <button class="st-btn" data-task="lift_pot">lift_pot</button>
-          <button class="st-btn" data-task="open_laptop">open_laptop</button>
-          <button class="st-btn active" data-task="pick_dual_bottles">pick_dual_bottles</button>
-          <button class="st-btn" data-task="put_object_cabinet">put_object_cabinet</button>
+        <div class="mini-grid">
+          <div class="mini-chart"><div class="mini-head"><h4>lift_pot</h4></div>
+            <div class="img-box"><video class="rollout" src="media/fm_lift_pot.mp4" poster="media/fm_lift_pot.jpg" autoplay muted loop playsinline aria-label="ManiFlow (left) and ASPL (right) on lift_pot, same episode"></video></div>
+          </div>
+          <div class="mini-chart"><div class="mini-head"><h4>open_laptop</h4></div>
+            <div class="img-box"><video class="rollout" src="media/fm_open_laptop.mp4" poster="media/fm_open_laptop.jpg" autoplay muted loop playsinline aria-label="ManiFlow (left) and ASPL (right) on open_laptop, same episode"></video></div>
+          </div>
+          <div class="mini-chart"><div class="mini-head"><h4>pick_dual_bottles</h4></div>
+            <div class="img-box"><video class="rollout" src="media/fm_pick_dual_bottles.mp4" poster="media/fm_pick_dual_bottles.jpg" autoplay muted loop playsinline aria-label="ManiFlow (left) and ASPL (right) on pick_dual_bottles, same episode"></video></div>
+          </div>
+          <div class="mini-chart"><div class="mini-head"><h4>put_object_cabinet</h4></div>
+            <div class="img-box"><video class="rollout" src="media/fm_put_object_cabinet.mp4" poster="media/fm_put_object_cabinet.jpg" autoplay muted loop playsinline aria-label="ManiFlow (left) and ASPL (right) on put_object_cabinet, same episode"></video></div>
+          </div>
         </div>
         <div class="app-body">
         <h3>Constrained flow matching (RoboTwin&nbsp;2.0)</h3>
@@ -702,28 +704,6 @@ pip install -e <span class="string">"aspl[cuda]"</span>
   <p>ASPL <span class="sep">·</span><a href="paper.pdf" target="_blank" rel="noopener">Paper</a> <span class="sep">·</span><a href="https://huggingface.co/ASLP-Net/ASPL">Code</a> <span class="sep">·</span><a href="https://huggingface.co/datasets/ASLP-Net/ASPL-data">Data</a></p>
   <p style="margin-top:8px;opacity:0.6;">Contact: tarzanagh [at] gmail [dot] com</p>
 </footer>
-<script>
-(function(){
-  const iv = document.getElementById("ik-video");
-  document.querySelectorAll("#ik-tabs .st-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll("#ik-tabs .st-btn").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      const c = btn.dataset.clip;
-      iv.poster = `media/ik_${c}.jpg`; iv.src = `media/ik_${c}.mp4`; iv.play().catch(() => {});
-    });
-  });
-  const v = document.getElementById("fm-video");
-  document.querySelectorAll("#fm-tabs .st-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll("#fm-tabs .st-btn").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      const t = btn.dataset.task;
-      v.poster = `media/fm_${t}.jpg`; v.src = `media/fm_${t}.mp4`; v.play().catch(() => {});
-    });
-  });
-})();
-</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="media/hero3d.js"></script>
 </body>
