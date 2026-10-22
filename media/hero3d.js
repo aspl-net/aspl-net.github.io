@@ -173,9 +173,12 @@
     const L = Math.max(len, 1e-3);
     g.position.copy(origin);
     g.quaternion.setFromUnitVectors(V(0, 1, 0), dir.clone().normalize());
-    g.userData.shaft.scale.set(1, Math.max(L - 0.12, 1e-3), 1);
-    g.userData.shaft.position.set(0, Math.max(L - 0.12, 1e-3) / 2, 0);
-    g.userData.head.position.set(0, L - 0.06, 0);
+    const s = Math.min(1, L / 0.14);
+    const sl = Math.max(L - 0.12 * s, 1e-3);
+    g.userData.shaft.scale.set(1, sl, 1);
+    g.userData.shaft.position.set(0, sl / 2, 0);
+    g.userData.head.scale.setScalar(s);
+    g.userData.head.position.set(0, L - 0.07 * s, 0);
   }
 
   // ---------- per-cycle objects ----------
