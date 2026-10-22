@@ -377,6 +377,24 @@
         <div id="fmfail-extra"></div>
       </div>
     </div>
+
+    <div class="app-grid" style="margin-top:28px;">
+      <div class="app-card">
+        <div class="img-box"><video id="fm-video" class="rollout" src="media/fm_pick_dual_bottles.mp4" poster="media/fm_pick_dual_bottles.jpg" autoplay muted loop playsinline aria-label="ManiFlow (left) and ManiFlow + ASPL (right) on the same episode"></video></div>
+        <div class="subtabs fm-tabs" id="fm-tabs">
+          <button class="st-btn" data-task="lift_pot">lift_pot</button>
+          <button class="st-btn" data-task="open_laptop">open_laptop</button>
+          <button class="st-btn active" data-task="pick_dual_bottles">pick_dual_bottles</button>
+          <button class="st-btn" data-task="put_object_cabinet">put_object_cabinet</button>
+        </div>
+        <div class="app-body">
+        <h3>Constrained flow matching (RoboTwin&nbsp;2.0)</h3>
+        <ul class="res">
+          <li>Same episode, left ManiFlow, right ManiFlow + ASPL. Success <strong>never drops</strong> on any task and rises by 4 on two.</li>
+        </ul>
+        </div>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -667,21 +685,6 @@
         </table>
         <ul class="res">
           <li>Held-out real logs, closed loop. Task error median about <strong>10<sup>&minus;13</sup></strong>; batched, faster than Clarabel at every chunk length.</li>
-        </ul>
-        </div>
-      </div>
-      <div class="app-card">
-        <div class="img-box"><video id="fm-video" class="rollout" src="media/fm_pick_dual_bottles.mp4" poster="media/fm_pick_dual_bottles.jpg" autoplay muted loop playsinline aria-label="ManiFlow (left) and ManiFlow + ASPL (right) on the same episode"></video></div>
-        <div class="subtabs fm-tabs" id="fm-tabs">
-          <button class="st-btn" data-task="lift_pot">lift_pot</button>
-          <button class="st-btn" data-task="open_laptop">open_laptop</button>
-          <button class="st-btn active" data-task="pick_dual_bottles">pick_dual_bottles</button>
-          <button class="st-btn" data-task="put_object_cabinet">put_object_cabinet</button>
-        </div>
-        <div class="app-body">
-        <h3>Constrained flow matching (RoboTwin&nbsp;2.0)</h3>
-        <ul class="res">
-          <li>Same episode, left ManiFlow, right ManiFlow + ASPL. Success <strong>never drops</strong> on any task and rises by 4 on two.</li>
         </ul>
         </div>
       </div>
