@@ -478,12 +478,12 @@
       metricLabel: { Err: "error (mm, log)", Lat: "ms (log)" },
       subtitle: { Err: "Held-out teleoperation logs, same per-step joint box for every method", Lat: "Batch 1; ASPL, Pink and Mink on one CPU core, the rest on GPU" },
       series: {
-        Err: [[0.038, 0.069, 0.65, 0.98, 0.82, 0.99], [0.043, 0.077, 0.076, 0.095, 0.11, 0.94], [0.081, 0.27, 0.28, 0.030, 0.053, 7.9]],
-        Lat: [[2.2, 0.33, 0.47, 54, 29, 69], [5.3, 1.2, 0.59, 47, 18, 24], [4.1, 1.2, 0.57, 60, 38, 30]],
+        Err: [[0.038, 0.069, 0.65, 0.98, 0.82, 0.99], [0.017, 0.050, 0.051, 0.095, 0.11, 0.94], [0.032, 0.12, 0.12, 0.030, 0.053, 7.9]],
+        Lat: [[0.60, 0.37, 0.46, 54, 8.8, 8.4], [1.4, 1.2, 0.57, 47, 18, 24], [0.94, 1.2, 0.56, 60, 36, 30]],
       },
       log: { Err: true, Lat: true },
       yRange: { Err: [0.01, 10], Lat: [0.1, 100] },
-      caption: { Err: "", Lat: "PyRoki clips its output to the box and cuRobo treats the box as a soft cost; both take longer than the 33 ms control period." },
+      caption: { Err: "", Lat: "PyRoki clips its output to the box and cuRobo treats the box as a soft cost; PyRoki takes longer than the 33 ms control period on every robot, cuRobo on G1 walk." },
     },
     fmfail: {
       title: "Task-Specific Inference-Time Constraints",
