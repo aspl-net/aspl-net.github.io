@@ -333,9 +333,10 @@
 </section>
 
 <!-- ============ BENCHMARKS ============ -->
+<!-- ============ SYNTHETIC EXPERIMENTS ============ -->
 <section>
   <div class="container">
-
+    <h2>Synthetic Experiments</h2>
     <div class="bench-stack">
       <div class="bench-card">
         <div class="bench-header">
@@ -349,7 +350,15 @@
         <div class="chart-legend" id="qp-legend"></div>
         <p class="chart-caption" id="qp-caption"></p>
       </div>
+    </div>
+  </div>
+</section>
 
+<!-- ============ INVERSE KINEMATICS ============ -->
+<section>
+  <div class="container">
+    <h2>Inverse Kinematics for Robot Teleoperation</h2>
+    <div class="bench-stack">
       <div class="bench-card">
         <div class="bench-header">
           <h3 id="ik-title">Inverse Kinematics</h3>
@@ -362,7 +371,44 @@
         <div class="chart-legend" id="ik-legend"></div>
         <p class="chart-caption" id="ik-caption"></p>
       </div>
+    </div>
 
+    <div class="app-grid" style="margin-top:28px;">
+      <div class="app-card">
+        <div class="img-box"><video id="ik-video" src="media/ik_g1_walk.mp4" poster="media/ik_g1_walk.jpg" autoplay muted loop playsinline aria-label="Closed-loop IK: head camera, operator command, and ASPL with the per-frame end-effector error"></video></div>
+        <div class="subtabs fm-tabs" id="ik-tabs">
+          <button class="st-btn" data-clip="vega">Vega-1</button>
+          <button class="st-btn" data-clip="g1_table">G1 table</button>
+          <button class="st-btn active" data-clip="g1_walk">G1 walking</button>
+        </div>
+        <div class="app-body">
+        <h3>Inverse kinematics on real robot logs</h3>
+        <table class="mini">
+          <thead><tr><th>closed loop, same bound</th><th>Vega-1</th><th>G1 table</th><th>G1 walk</th></tr></thead>
+          <tbody>
+            <tr><td colspan="4" class="grp">end-effector error (mm)</td></tr>
+            <tr class="ours"><td>ASPL</td><td>0.7</td><td>0.3</td><td>3.4</td></tr>
+            <tr><td>Pink</td><td>21.2</td><td>56.6</td><td>1.1</td></tr>
+            <tr><td>clip to limits</td><td>17.3</td><td>58.2</td><td>86.9</td></tr>
+            <tr><td colspan="4" class="grp">acceleration above bound (rad/s&sup2;)</td></tr>
+            <tr class="ours"><td>ASPL</td><td>0</td><td>0</td><td>72</td></tr>
+            <tr><td>Pink</td><td>68</td><td>638</td><td>56</td></tr>
+          </tbody>
+        </table>
+        <ul class="res">
+          <li>Held-out real logs, closed loop. Task error median about <strong>10<sup>&minus;13</sup></strong>; batched, faster than Clarabel at every chunk length.</li>
+        </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CONSTRAINED ROBOT MANIPULATION ============ -->
+<section>
+  <div class="container">
+    <h2>Constrained Robot Manipulation</h2>
+    <div class="bench-stack">
       <div class="bench-card">
         <div class="bench-header">
           <h3 id="fmfail-title">Task Constraints</h3>
@@ -380,7 +426,7 @@
 
     <div class="app-grid" style="margin-top:28px;">
       <div class="app-card">
-        <div class="img-box"><video id="fm-video" class="rollout" src="media/fm_pick_dual_bottles.mp4" poster="media/fm_pick_dual_bottles.jpg" autoplay muted loop playsinline aria-label="ManiFlow (left) and ManiFlow + ASPL (right) on the same episode"></video></div>
+        <div class="img-box"><video id="fm-video" class="rollout" src="media/fm_pick_dual_bottles.mp4" poster="media/fm_pick_dual_bottles.jpg" autoplay muted loop playsinline aria-label="ManiFlow (left) and ASPL (right) on the same episode"></video></div>
         <div class="subtabs fm-tabs" id="fm-tabs">
           <button class="st-btn" data-task="lift_pot">lift_pot</button>
           <button class="st-btn" data-task="open_laptop">open_laptop</button>
@@ -390,7 +436,30 @@
         <div class="app-body">
         <h3>Constrained flow matching (RoboTwin&nbsp;2.0)</h3>
         <ul class="res">
-          <li>Same episode, left ManiFlow, right ManiFlow + ASPL. Success <strong>never drops</strong> on any task and rises by 4 on two.</li>
+          <li>Same episode, left ManiFlow, right ASPL. Success <strong>never drops</strong> on any task and rises by 4 on two.</li>
+        </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ MOTION PLANNING ============ -->
+<section>
+  <div class="container">
+    <h2>Motion Planning</h2>
+    <div class="app-grid">
+      <div class="app-card">
+        <div class="img-box"><video src="media/mp_r5h25.mp4" poster="media/mp_r5h25.jpg" autoplay muted loop playsinline aria-label="Five robots: Pi-net (left) and ASPL (right) predicted trajectories against the ground truth"></video></div>
+        <div class="app-body">
+        <h3>Multi-robot motion planning</h3>
+        <ul class="res">
+          <li>Five robots over 25 steps under workspace, velocity, acceleration, jerk and collision constraints: ASPL follows the ground-truth trajectories (dashed) where &Pi;net drifts.</li>
+          <li>Training time <strong>stays flat</strong> in the active-set ratio while &Pi;net's climbs (8 robots, 50 steps, d&nbsp;=&nbsp;2,432).</li>
+        </ul>
+        <ul class="res">
+          <li>16 robots over 100 steps (d&nbsp;=&nbsp;9,664): ASPL's position error stays below &Pi;net's over most of the horizon.</li>
+          <li>Every output is feasible: the projection enforces all constraints exactly.</li>
         </ul>
         </div>
       </div>
@@ -643,54 +712,6 @@
   ["qp", "ik", "fmfail"].forEach(mountSection);
 })();
 </script>
-
-<!-- ============ APPLICATION RESULTS ============ -->
-<section>
-  <div class="container">
-    <div class="app-grid">
-      <div class="app-card">
-        <div class="img-box"><video src="media/mp_r5h25.mp4" poster="media/mp_r5h25.jpg" autoplay muted loop playsinline aria-label="Five robots: Pi-net (left) and ASPL (right) predicted trajectories against the ground truth"></video></div>
-        <div class="app-body">
-        <h3>Multi-robot motion planning</h3>
-        <ul class="res">
-          <li>Five robots over 25 steps under workspace, velocity, acceleration, jerk and collision constraints: ASPL follows the ground-truth trajectories (dashed) where &Pi;net drifts.</li>
-          <li>Training time <strong>stays flat</strong> in the active-set ratio while &Pi;net's climbs (8 robots, 50 steps, d&nbsp;=&nbsp;2,432).</li>
-        </ul>
-        <ul class="res">
-          <li>16 robots over 100 steps (d&nbsp;=&nbsp;9,664): ASPL's position error stays below &Pi;net's over most of the horizon.</li>
-          <li>Every output is feasible: the projection enforces all constraints exactly.</li>
-        </ul>
-        </div>
-      </div>
-      <div class="app-card">
-        <div class="img-box"><video id="ik-video" src="media/ik_g1_walk.mp4" poster="media/ik_g1_walk.jpg" autoplay muted loop playsinline aria-label="Closed-loop IK: head camera, operator command, and ASPL with the per-frame end-effector error"></video></div>
-        <div class="subtabs fm-tabs" id="ik-tabs">
-          <button class="st-btn" data-clip="vega">Vega-1</button>
-          <button class="st-btn" data-clip="g1_table">G1 table</button>
-          <button class="st-btn active" data-clip="g1_walk">G1 walking</button>
-        </div>
-        <div class="app-body">
-        <h3>Inverse kinematics on real robot logs</h3>
-        <table class="mini">
-          <thead><tr><th>closed loop, same bound</th><th>Vega-1</th><th>G1 table</th><th>G1 walk</th></tr></thead>
-          <tbody>
-            <tr><td colspan="4" class="grp">end-effector error (mm)</td></tr>
-            <tr class="ours"><td>ASPL</td><td>0.7</td><td>0.3</td><td>3.4</td></tr>
-            <tr><td>Pink</td><td>21.2</td><td>56.6</td><td>1.1</td></tr>
-            <tr><td>clip to limits</td><td>17.3</td><td>58.2</td><td>86.9</td></tr>
-            <tr><td colspan="4" class="grp">acceleration above bound (rad/s&sup2;)</td></tr>
-            <tr class="ours"><td>ASPL</td><td>0</td><td>0</td><td>72</td></tr>
-            <tr><td>Pink</td><td>68</td><td>638</td><td>56</td></tr>
-          </tbody>
-        </table>
-        <ul class="res">
-          <li>Held-out real logs, closed loop. Task error median about <strong>10<sup>&minus;13</sup></strong>; batched, faster than Clarabel at every chunk length.</li>
-        </ul>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
 
 <!-- ============ QUICK START ============ -->
 <section>
