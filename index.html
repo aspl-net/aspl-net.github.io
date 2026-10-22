@@ -162,6 +162,12 @@
     .chart-legend span { display:inline-flex; align-items:center; gap:6px; }
     .chart-legend i { display:inline-block; width:12px; height:12px; border-radius:3px; }
     .chart-caption { font-style:italic; color:var(--slate-500); font-size:0.88rem; text-align:center; margin:8px 0 0; }
+    #bt-extra { max-width:640px; margin:14px auto 0; }
+    #bt-extra ul { margin:0; padding-left:0; list-style:none; }
+    #bt-extra li { font-size:0.88rem; color:var(--slate-600); line-height:1.6; padding:9px 0; border-top:1px solid var(--slate-100); }
+    #bt-extra li:first-child { border-top:none; }
+    #bt-extra li strong { color:var(--slate-800); }
+    #bt-extra code { background:var(--slate-100); color:var(--slate-700); border-radius:4px; padding:1px 5px; font-size:0.86em; }
 
     @media (max-width:768px) {
       .hero h1 { font-size:2.2rem; }
@@ -346,6 +352,7 @@
         <button class="bt-btn active" role="tab" data-tab="qp" aria-selected="true">Quadratic Programs</button>
         <button class="bt-btn"        role="tab" data-tab="ik" aria-selected="false">Inverse Kinematics</button>
         <button class="bt-btn"        role="tab" data-tab="fm" aria-selected="false">Flow Matching</button>
+        <button class="bt-btn"        role="tab" data-tab="fmfail" aria-selected="false">Task Constraints</button>
       </div>
 
       <div class="bench-card">
@@ -359,6 +366,7 @@
         </div>
         <div class="chart-legend" id="bt-legend"></div>
         <p class="chart-caption" id="bt-caption"></p>
+        <div id="bt-extra"></div>
       </div>
     </div>
   </div>
@@ -440,6 +448,22 @@
       yRange: { SR:[0,100] },
       caption: {
         SR: "Same 100 fixed episodes per task. Success never drops, and rises by 4 on pick_dual_bottles and put_object_cabinet (one training and one evaluation seed).",
+      }
+    },
+    fmfail: {
+      title: "Task-Specific Inference-Time Constraints",
+      kind: "grouped",
+      groups: ["open_laptop", "lift_pot", "pick_dual_bottles"],
+      seriesNames: ["ManiFlow", "+ task constraint"],
+      colors: [C.base, C.aspl],
+      sub: { SR:"Success rate" },
+      subDefault: "SR",
+      metricLabel: { SR:"success rate (%)" },
+      subtitle: { SR:"RoboTwin 2.0 · follow-up study, same 100 fixed episodes per task" },
+      series: { SR: [[50,84],[64,89],[68,77]] },
+      yRange: { SR:[0,100] },
+      caption: {
+        SR: "A constraint built from the diagnosed failure mode of each task, read only from the point cloud and the robot's own state at inference. lift_pot: 89 of 100 episodes tested so far with zero regressions, so 89/100 is a conservative current estimate; put_object_cabinet analysis is still running.",
       }
     }
   };
@@ -574,6 +598,18 @@
     $title.textContent = cfg.title;
     $sub.textContent = cfg.subtitle[sub];
     $caption.textContent = cfg.caption[sub] || "";
+    const $extra = document.getElementById("bt-extra");
+    if (tab === "fmfail") {
+      const rows = [
+        ["open_laptop", "Read the task arm off the point cloud. If the policy's own plan already moves it, leave the chunk untouched; otherwise replan on a mirrored observation and hold the other arm still, then clip the grasp point to the point-cloud-estimated handle: <code>||TCP &minus; handle||&infin; &le; &epsilon;</code>."],
+        ["lift_pot", "Pull each hand toward its point-cloud-estimated handle, but only as fast as it can safely move and never tighter than the policy's own plan: <code>||TCP(t) &minus; handle|| &le; &epsilon; + min(plan_err(t), d&#8321; &minus; rate&middot;t)</code>."],
+        ["pick_dual_bottles", "Block the open gripper from overshooting past, descending onto, or swinging into the bottle before it closes: <code>depth(q) &ge; 0.095</code>, <code>|lateral(q)| &le; 0.02</code>, both only while <code>depth(q) &lt; 0.17</code>."],
+        ["put_object_cabinet", "Nudge the grasp point sideways to the point-cloud-estimated handle and correct the gripper's twist past 15&deg;: <code>&delta; = handle &minus; grasp_point</code>, applied when <code>0.01 &le; ||&delta;|| &le; 0.12</code>. Results pending."],
+      ];
+      $extra.innerHTML = "<ul>" + rows.map(([t, d]) => `<li><strong>${t}</strong> &mdash; ${d}</li>`).join("") + "</ul>";
+    } else {
+      $extra.innerHTML = "";
+    }
   }
 
   function renderSubtabs(tab) {
