@@ -416,6 +416,8 @@
   //   FM : Figure "fig:fm" (100 fixed episodes per task)
   const C = { aspl:"#2563eb", aspl2:"#60a5fa", pinet:"#ea580c", jax:"#64748b", base:"#cbd5e1", mid:"#94a3b8" };
   const RATIOS = [0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45];
+  const IKM = ["ASPL", "Pink", "Mink", "PyRoki", "cuRobo", "MJINX"];
+  const IKC = [C.aspl, C.pinet, "#f59e0b", C.jax, C.mid, C.base];
 
   const BENCH = {
     qp: {
@@ -469,18 +471,19 @@
       title: "Closed-loop IK, real robot logs",
       kind: "grouped",
       groups: ["Vega-1", "G1 table", "G1 walk"],
-      sub: { Err: "End-effector error (mm)" },
+      sub: { Err: "End-effector error (mm)", Lat: "Time per control step (ms)" },
       subDefault: "Err",
-      seriesNames: { Err: ["ASPL", "Pink", "clip to limits"] },
-      colors: { Err: [C.aspl, C.base, C.mid] },
-      metricLabel: { Err: "error (mm, log)" },
-      subtitle: { Err: "Held-out teleoperation logs, same acceleration bound for all three" },
+      seriesNames: { Err: IKM, Lat: IKM },
+      colors: { Err: IKC, Lat: IKC },
+      metricLabel: { Err: "error (mm, log)", Lat: "ms (log)" },
+      subtitle: { Err: "Held-out teleoperation logs, same per-step joint box for every method", Lat: "Batch 1; ASPL, Pink and Mink on one CPU core, the rest on GPU" },
       series: {
-        Err: [[0.7, 21.2, 17.3], [0.3, 56.6, 58.2], [3.4, 1.1, 86.9]],
+        Err: [[0.038, 0.069, 0.65, 0.98, 0.82, 0.99], [0.043, 0.077, 0.076, 0.095, 0.11, 0.94], [0.081, 0.27, 0.28, 0.030, 0.053, 7.9]],
+        Lat: [[2.2, 0.33, 0.47, 54, 29, 69], [5.3, 1.2, 0.59, 47, 18, 24], [4.1, 1.2, 0.57, 60, 38, 30]],
       },
-      log: { Err: true },
-      yRange: { Err: [0.1, 100] },
-      caption: { Err: "" },
+      log: { Err: true, Lat: true },
+      yRange: { Err: [0.01, 10], Lat: [0.1, 100] },
+      caption: { Err: "", Lat: "PyRoki clips its output to the box and cuRobo treats the box as a soft cost; both take longer than the 33 ms control period." },
     },
     fmfail: {
       title: "Task-Specific Inference-Time Constraints",
@@ -600,14 +603,16 @@
     const cols = Array.isArray(cfg.colors) ? cfg.colors : cfg.colors[sub];
     const y = makeScale(lo, hi, log);
     const groups = cfg.groups, k = names.length;
-    const slot = plotW / groups.length, bw = slot * 0.3;
+    const gap = k > 3 ? 2 : 4;
+    const slot = plotW / groups.length, bw = Math.min(slot * 0.3, slot * 0.86 / k - gap);
+    const fs = k > 3 ? 8.5 : 13;
     let s = axes(lo, hi, log, cfg.metricLabel[sub]);
     groups.forEach((g, gi) => {
-      const x0 = padL + slot * gi + (slot - bw * k - 4) / 2;
+      const x0 = padL + slot * gi + (slot - (bw + gap) * k + gap) / 2;
       cfg.series[sub][gi].forEach((v, si) => {
-        const bx = x0 + si * (bw + 4), top = y(v);
+        const bx = x0 + si * (bw + gap), top = y(v);
         s += `<rect class="grow" style="animation-delay:${gi * 0.15 + si * 0.08}s" x="${bx}" y="${top}" width="${bw}" height="${padT + plotH - top}" rx="3" fill="${cols[si]}"><title>${names[si]}: ${v}</title></rect>`;
-        s += `<text x="${bx + bw/2}" y="${top - 8}" text-anchor="middle" fill="#0f172a" font-size="13" font-weight="700" ${FONT}>${fmtVal(v, log)}</text>`;
+        s += `<text x="${bx + bw/2}" y="${top - 6}" text-anchor="middle" fill="#0f172a" font-size="${fs}" font-weight="700" ${FONT}>${fmtVal(v, log)}</text>`;
       });
       s += `<text x="${padL + slot * gi + slot/2}" y="${padT + plotH + 22}" text-anchor="middle" fill="#334155" font-size="12" ${FONT}>${g.replace(/_/g, "_​")}</text>`;
     });
