@@ -344,6 +344,7 @@
       <div class="bench-card">
         <div class="bench-header">
           <h3>Amortized Inverse Kinematics</h3>
+          <p class="section-sub">Same network and data on both robots; only the output layer changes. ASPL meets the task to ~10⁻¹¹–10⁻¹² and the joint limits at the same time, at a few µs per frame, where regression misses the limits and clipping breaks the task.</p>
         </div>
         <div class="mini-grid" id="ik-grid"></div>
       </div>
@@ -462,12 +463,7 @@
       },
       log: { VegaErr:true, G1Err:true },
       yRange: { VegaErr:[1e-13,1e2], G1Err:[1e-13,1e2], VegaViol:[0,100], G1Viol:[0,100] },
-      caption: {
-        VegaErr:  "Same network and data in every row; only the output layer changes. ASPL meets the task to ~10⁻¹², twelve orders of magnitude below regression.",
-        VegaViol: "Regression violates a joint limit on most frames; ASPL meets the limits on nearly all of them at 5 µs per frame.",
-        G1Err:    "On the 35-DoF humanoid, ASPL meets the task to ~10⁻¹¹; clipping to the limits makes the task error worse.",
-        G1Viol:   "Clipping removes violations but breaks the task; ASPL satisfies both at 7 µs per frame.",
-      }
+      caption: { VegaErr: "", VegaViol: "", G1Err: "", G1Viol: "" }
     },
     ikbar: {
       title: "Closed-loop IK, real robot logs",
