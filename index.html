@@ -332,6 +332,10 @@
           <div class="mini-chart"><div class="mini-head"><h4>G1 walking</h4></div>
             <div class="img-box"><video class="rollout" src="media/ik_g1_walk.mp4" poster="media/ik_g1_walk.jpg" autoplay muted loop playsinline aria-label="Closed-loop IK on G1 walking: head camera, operator command, and ASPL with the per-frame end-effector error"></video></div>
           </div>
+          <div class="mini-chart">
+            <div class="mini-head"><h4>Closed-loop IK, real robot logs</h4></div>
+            <div class="mini-grid" id="ikbar-grid" style="grid-template-columns:1fr; gap:18px;"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -368,7 +372,7 @@
           </div>
         </div>
         <div class="app-body">
-        <h3>Constrained flow matching (RoboTwin&nbsp;2.0)</h3>
+        <h3>RoboTwin&nbsp;2.0</h3>
         <ul class="res">
           <li>Same episode, left ManiFlow, right ASPL. Success <strong>never drops</strong> on any task and rises by 4 on two.</li>
         </ul>
@@ -464,6 +468,24 @@
         G1Err:    "On the 35-DoF humanoid, ASPL meets the task to ~10⁻¹¹; clipping to the limits makes the task error worse.",
         G1Viol:   "Clipping removes violations but breaks the task; ASPL satisfies both at 7 µs per frame.",
       }
+    },
+    ikbar: {
+      title: "Closed-loop IK, real robot logs",
+      kind: "grouped",
+      groups: ["Vega-1", "G1 table", "G1 walk"],
+      sub: { Err: "End-effector error (mm)", Acc: "Acceleration above bound (rad/s²)" },
+      subDefault: "Err",
+      seriesNames: { Err: ["ASPL", "Pink", "clip to limits"], Acc: ["ASPL", "Pink"] },
+      colors: { Err: [C.aspl, C.base, C.mid], Acc: [C.aspl, C.base] },
+      metricLabel: { Err: "error (mm, log)", Acc: "accel. over bound" },
+      subtitle: { Err: "Held-out teleoperation logs, same acceleration bound for all three", Acc: "Held-out teleoperation logs, same acceleration bound for all three" },
+      series: {
+        Err: [[0.7, 21.2, 17.3], [0.3, 56.6, 58.2], [3.4, 1.1, 86.9]],
+        Acc: [[0, 68], [0, 638], [72, 56]],
+      },
+      log: { Err: true },
+      yRange: { Err: [0.1, 100], Acc: [0, 700] },
+      caption: { Err: "", Acc: "" },
     },
     fmfail: {
       title: "Task-Specific Inference-Time Constraints",
@@ -578,21 +600,24 @@
 
   function renderGrouped(cfg, sub, els) {
     const [lo, hi] = cfg.yRange[sub];
-    const y = makeScale(lo, hi, false);
-    const groups = cfg.groups, k = cfg.seriesNames.length;
+    const log = !!(cfg.log && cfg.log[sub]);
+    const names = Array.isArray(cfg.seriesNames) ? cfg.seriesNames : cfg.seriesNames[sub];
+    const cols = Array.isArray(cfg.colors) ? cfg.colors : cfg.colors[sub];
+    const y = makeScale(lo, hi, log);
+    const groups = cfg.groups, k = names.length;
     const slot = plotW / groups.length, bw = slot * 0.3;
-    let s = axes(lo, hi, false, cfg.metricLabel[sub]);
+    let s = axes(lo, hi, log, cfg.metricLabel[sub]);
     groups.forEach((g, gi) => {
       const x0 = padL + slot * gi + (slot - bw * k - 4) / 2;
       cfg.series[sub][gi].forEach((v, si) => {
         const bx = x0 + si * (bw + 4), top = y(v);
-        s += `<rect class="grow" style="animation-delay:${gi * 0.15 + si * 0.08}s" x="${bx}" y="${top}" width="${bw}" height="${padT + plotH - top}" rx="3" fill="${cfg.colors[si]}"><title>${cfg.seriesNames[si]}: ${v}%</title></rect>`;
-        s += `<text x="${bx + bw/2}" y="${top - 8}" text-anchor="middle" fill="#0f172a" font-size="13" font-weight="700" ${FONT}>${v}</text>`;
+        s += `<rect class="grow" style="animation-delay:${gi * 0.15 + si * 0.08}s" x="${bx}" y="${top}" width="${bw}" height="${padT + plotH - top}" rx="3" fill="${cols[si]}"><title>${names[si]}: ${v}</title></rect>`;
+        s += `<text x="${bx + bw/2}" y="${top - 8}" text-anchor="middle" fill="#0f172a" font-size="13" font-weight="700" ${FONT}>${fmtVal(v, log)}</text>`;
       });
       s += `<text x="${padL + slot * gi + slot/2}" y="${padT + plotH + 22}" text-anchor="middle" fill="#334155" font-size="12" ${FONT}>${g.replace(/_/g, "_​")}</text>`;
     });
     els.chart.innerHTML = s;
-    legend(els.legend, cfg.seriesNames.map((n, i) => [n, cfg.colors[i]]));
+    legend(els.legend, names.map((n, i) => [n, cols[i]]));
   }
 
   function mountGrid(key) {
@@ -616,7 +641,7 @@
     });
   }
 
-  ["qp", "ik", "fmfail"].forEach(mountGrid);
+  ["qp", "ik", "ikbar", "fmfail"].forEach(mountGrid);
 })();
 </script>
 
@@ -663,7 +688,7 @@ pip install -e <span class="string">"aspl[cuda]"</span>
 
 <footer>
   <p>ASPL <span class="sep">·</span><a href="paper.pdf" target="_blank" rel="noopener">Paper</a> <span class="sep">·</span><a href="https://huggingface.co/ASLP-Net">Code and data</a></p>
-  <p style="margin-top:8px;opacity:0.6;">Contact: tarzanagh [at] gmail [dot] com</p>
+  <p style="margin-top:8px;opacity:0.6;">Contact: sima.didari [at] gmail [dot] com &nbsp;·&nbsp; tarzanagh [at] gmail [dot] com</p>
 </footer>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="media/hero3d.js"></script>
