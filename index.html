@@ -358,22 +358,7 @@
 <section>
   <div class="container">
     <h2>Inverse Kinematics for Robot Teleoperation</h2>
-    <div class="bench-stack">
-      <div class="bench-card">
-        <div class="bench-header">
-          <h3 id="ik-title">Inverse Kinematics</h3>
-          <p id="ik-sub"></p>
-        </div>
-        <div class="subtabs" id="ik-subtabs"></div>
-        <div class="chart-box">
-          <svg id="ik-chart" class="bt-chart" viewBox="0 0 680 330" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="ik-title ik-sub"></svg>
-        </div>
-        <div class="chart-legend" id="ik-legend"></div>
-        <p class="chart-caption" id="ik-caption"></p>
-      </div>
-    </div>
-
-    <div class="app-grid" style="margin-top:28px;">
+    <div class="app-grid">
       <div class="app-card">
         <div class="img-box"><video id="ik-video" src="media/ik_g1_walk.mp4" poster="media/ik_g1_walk.jpg" autoplay muted loop playsinline aria-label="Closed-loop IK: head camera, operator command, and ASPL with the per-frame end-effector error"></video></div>
         <div class="subtabs fm-tabs" id="ik-tabs">
@@ -401,6 +386,21 @@
         </div>
       </div>
     </div>
+
+    <div class="bench-stack" style="margin-top:28px;">
+      <div class="bench-card">
+        <div class="bench-header">
+          <h3 id="ik-title">Inverse Kinematics</h3>
+          <p id="ik-sub"></p>
+        </div>
+        <div class="subtabs" id="ik-subtabs"></div>
+        <div class="chart-box">
+          <svg id="ik-chart" class="bt-chart" viewBox="0 0 680 330" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="ik-title ik-sub"></svg>
+        </div>
+        <div class="chart-legend" id="ik-legend"></div>
+        <p class="chart-caption" id="ik-caption"></p>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -408,23 +408,7 @@
 <section>
   <div class="container">
     <h2>Constrained Robot Manipulation</h2>
-    <div class="bench-stack">
-      <div class="bench-card">
-        <div class="bench-header">
-          <h3 id="fmfail-title">Task Constraints</h3>
-          <p id="fmfail-sub"></p>
-        </div>
-        <div class="subtabs" id="fmfail-subtabs"></div>
-        <div class="chart-box">
-          <svg id="fmfail-chart" class="bt-chart" viewBox="0 0 680 330" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="fmfail-title fmfail-sub"></svg>
-        </div>
-        <div class="chart-legend" id="fmfail-legend"></div>
-        <p class="chart-caption" id="fmfail-caption"></p>
-        <div id="fmfail-extra"></div>
-      </div>
-    </div>
-
-    <div class="app-grid" style="margin-top:28px;">
+    <div class="app-grid">
       <div class="app-card">
         <div class="img-box"><video id="fm-video" class="rollout" src="media/fm_pick_dual_bottles.mp4" poster="media/fm_pick_dual_bottles.jpg" autoplay muted loop playsinline aria-label="ManiFlow (left) and ASPL (right) on the same episode"></video></div>
         <div class="subtabs fm-tabs" id="fm-tabs">
@@ -439,6 +423,22 @@
           <li>Same episode, left ManiFlow, right ASPL. Success <strong>never drops</strong> on any task and rises by 4 on two.</li>
         </ul>
         </div>
+      </div>
+    </div>
+
+    <div class="bench-stack" style="margin-top:28px;">
+      <div class="bench-card">
+        <div class="bench-header">
+          <h3 id="fmfail-title">Task Constraints</h3>
+          <p id="fmfail-sub"></p>
+        </div>
+        <div class="subtabs" id="fmfail-subtabs"></div>
+        <div class="chart-box">
+          <svg id="fmfail-chart" class="bt-chart" viewBox="0 0 680 330" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="fmfail-title fmfail-sub"></svg>
+        </div>
+        <div class="chart-legend" id="fmfail-legend"></div>
+        <p class="chart-caption" id="fmfail-caption"></p>
+        <div id="fmfail-extra"></div>
       </div>
     </div>
   </div>
