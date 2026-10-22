@@ -270,9 +270,7 @@
   <div class="container">
     <p class="summary-text">
       <span>Projection layers enforce hard constraints exactly, but their gradient degrades as more constraints become tight.</span>
-      <span>ASPL differentiates through the <em>active manifold</em>: the backward pass is one small solve on the tight and curved directions.</span>
-      <span>It works with any forward solver, with finite-time identification and a local O(1/T) training rate.</span>
-      <span>It improves accuracy or cost on QPs, motion planning and real-robot IK, and enforces constraints in flow matching.</span>
+      <span>ASPL differentiates through the <em>active manifold</em> instead, for any forward solver, with provable guarantees and better accuracy or cost on QPs, motion planning and real-robot IK.</span>
     </p>
   </div>
 </section>
