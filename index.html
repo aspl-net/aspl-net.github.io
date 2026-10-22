@@ -692,31 +692,6 @@
         </ul>
         </div>
       </div>
-      <div class="app-card">
-        <div class="img-box"><video id="fm-video" class="rollout" src="media/fm_pick_dual_bottles.mp4" poster="media/fm_pick_dual_bottles.jpg" autoplay muted loop playsinline aria-label="ManiFlow (left) and ManiFlow + ASPL (right) on the same episode"></video></div>
-        <div class="subtabs fm-tabs" id="fm-tabs">
-          <button class="st-btn" data-task="lift_pot">lift_pot</button>
-          <button class="st-btn" data-task="open_laptop">open_laptop</button>
-          <button class="st-btn active" data-task="pick_dual_bottles">pick_dual_bottles</button>
-          <button class="st-btn" data-task="put_object_cabinet">put_object_cabinet</button>
-        </div>
-        <div class="app-body">
-        <h3>Constrained flow matching (RoboTwin&nbsp;2.0)</h3>
-        <table class="mini">
-          <thead><tr><th>success (100 episodes)</th><th>ManiFlow</th><th>+ ASPL</th></tr></thead>
-          <tbody>
-            <tr><td>lift_pot</td><td>64</td><td class="win">64</td></tr>
-            <tr><td>open_laptop</td><td>50</td><td class="win">50</td></tr>
-            <tr><td>pick_dual_bottles</td><td>68</td><td class="win">72</td></tr>
-            <tr><td>put_object_cabinet</td><td>23</td><td class="win">27</td></tr>
-            <tr class="total"><td>total (400 episodes)</td><td>205</td><td class="win">213</td></tr>
-          </tbody>
-        </table>
-        <ul class="res">
-          <li>Same episode, left ManiFlow, right ManiFlow + ASPL. Success <strong>never drops</strong> on any task and rises by 4 on two.</li>
-        </ul>
-        </div>
-      </div>
     </div>
   </div>
 </section>
@@ -775,15 +750,6 @@ pip install -e <span class="string">"aspl[cuda]"</span>
       btn.classList.add("active");
       const c = btn.dataset.clip;
       iv.poster = `media/ik_${c}.jpg`; iv.src = `media/ik_${c}.mp4`; iv.play().catch(() => {});
-    });
-  });
-  const v = document.getElementById("fm-video");
-  document.querySelectorAll("#fm-tabs .st-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll("#fm-tabs .st-btn").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      const t = btn.dataset.task;
-      v.poster = `media/fm_${t}.jpg`; v.src = `media/fm_${t}.mp4`; v.play().catch(() => {});
     });
   });
 })();
