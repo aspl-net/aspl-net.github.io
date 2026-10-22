@@ -351,7 +351,6 @@
       <div class="bench-tabs" role="tablist" aria-label="Benchmark">
         <button class="bt-btn active" role="tab" data-tab="qp" aria-selected="true">Quadratic Programs</button>
         <button class="bt-btn"        role="tab" data-tab="ik" aria-selected="false">Inverse Kinematics</button>
-        <button class="bt-btn"        role="tab" data-tab="fm" aria-selected="false">Flow Matching</button>
         <button class="bt-btn"        role="tab" data-tab="fmfail" aria-selected="false">Task Constraints</button>
       </div>
 
@@ -432,22 +431,6 @@
         VegaViol: "Regression violates a joint limit on most frames; ASPL meets the limits on nearly all of them at 5 µs per frame.",
         G1Err:    "On the 35-DoF humanoid, ASPL meets the task to ~10⁻¹¹; clipping to the limits makes the task error worse.",
         G1Viol:   "Clipping removes violations but breaks the task; ASPL satisfies both at 7 µs per frame.",
-      }
-    },
-    fm: {
-      title: "Constrained Flow Matching",
-      kind: "grouped",
-      groups: ["lift_pot", "open_laptop", "pick_dual_bottles", "put_object_cabinet"],
-      seriesNames: ["ManiFlow", "ManiFlow + ASPL"],
-      colors: [C.base, C.aspl],
-      sub: { SR:"Success rate" },
-      subDefault: "SR",
-      metricLabel: { SR:"success rate (%)" },
-      subtitle: { SR:"RoboTwin 2.0 bimanual tasks · 100 fixed episodes per task" },
-      series: { SR: [[64,64],[50,50],[68,72],[23,27]] },
-      yRange: { SR:[0,100] },
-      caption: {
-        SR: "Same 100 fixed episodes per task. Success never drops, and rises by 4 on pick_dual_bottles and put_object_cabinet (one training and one evaluation seed).",
       }
     },
     fmfail: {
