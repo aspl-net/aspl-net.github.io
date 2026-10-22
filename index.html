@@ -128,6 +128,11 @@
     .bench-stack { display:flex; flex-direction:column; gap:28px; margin-top:8px; }
     .bench-card { background:var(--white); border:1px solid var(--slate-200); border-radius:var(--radius-lg); padding:24px 24px 20px; box-shadow:0 1px 3px rgba(15,23,42,0.04); }
     .bench-header { text-align:center; margin-bottom:8px; }
+    .mini-grid { display:grid; grid-template-columns:1fr 1fr; gap:28px 24px; margin-top:4px; }
+    .mini-grid .mini-head { text-align:center; margin-bottom:2px; }
+    .mini-grid .mini-head h4 { font-size:0.95rem; font-weight:700; color:var(--slate-800); margin:0; }
+    .mini-grid .mini-head p { font-size:0.78rem; color:var(--slate-500); margin:2px 0 0; }
+    @media (max-width:860px) { .mini-grid { grid-template-columns:1fr; } }
     .bench-header h3 { font-size:1.25rem; font-weight:700; color:var(--slate-800); margin:0; }
     .bench-header p  { font-size:0.88rem; color:var(--slate-500); margin:4px 0 0; }
     .subtabs { display:flex; flex-wrap:wrap; justify-content:center; gap:6px; margin:14px 0 4px; }
@@ -152,12 +157,6 @@
     .chart-legend span { display:inline-flex; align-items:center; gap:6px; }
     .chart-legend i { display:inline-block; width:12px; height:12px; border-radius:3px; }
     .chart-caption { font-style:italic; color:var(--slate-500); font-size:0.88rem; text-align:center; margin:8px 0 0; }
-    #fmfail-extra { max-width:640px; margin:14px auto 0; }
-    #fmfail-extra ul { margin:0; padding-left:0; list-style:none; }
-    #fmfail-extra li { font-size:0.88rem; color:var(--slate-600); line-height:1.6; padding:9px 0; border-top:1px solid var(--slate-100); }
-    #fmfail-extra li:first-child { border-top:none; }
-    #fmfail-extra li strong { color:var(--slate-800); }
-    #fmfail-extra code { background:var(--slate-100); color:var(--slate-700); border-radius:4px; padding:1px 5px; font-size:0.86em; }
 
     @media (max-width:768px) {
       .hero h1 { font-size:2.2rem; }
@@ -340,15 +339,9 @@
     <div class="bench-stack">
       <div class="bench-card">
         <div class="bench-header">
-          <h3 id="qp-title">Quadratic Programs</h3>
-          <p id="qp-sub"></p>
+          <h3>Parametric Quadratic Programs</h3>
         </div>
-        <div class="subtabs" id="qp-subtabs"></div>
-        <div class="chart-box">
-          <svg id="qp-chart" class="bt-chart" viewBox="0 0 680 330" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="qp-title qp-sub"></svg>
-        </div>
-        <div class="chart-legend" id="qp-legend"></div>
-        <p class="chart-caption" id="qp-caption"></p>
+        <div class="mini-grid" id="qp-grid"></div>
       </div>
     </div>
   </div>
@@ -390,15 +383,9 @@
     <div class="bench-stack" style="margin-top:28px;">
       <div class="bench-card">
         <div class="bench-header">
-          <h3 id="ik-title">Inverse Kinematics</h3>
-          <p id="ik-sub"></p>
+          <h3>Amortized Inverse Kinematics</h3>
         </div>
-        <div class="subtabs" id="ik-subtabs"></div>
-        <div class="chart-box">
-          <svg id="ik-chart" class="bt-chart" viewBox="0 0 680 330" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="ik-title ik-sub"></svg>
-        </div>
-        <div class="chart-legend" id="ik-legend"></div>
-        <p class="chart-caption" id="ik-caption"></p>
+        <div class="mini-grid" id="ik-grid"></div>
       </div>
     </div>
   </div>
@@ -429,16 +416,9 @@
     <div class="bench-stack" style="margin-top:28px;">
       <div class="bench-card">
         <div class="bench-header">
-          <h3 id="fmfail-title">Task Constraints</h3>
-          <p id="fmfail-sub"></p>
+          <h3>Task-Specific Inference-Time Constraints</h3>
         </div>
-        <div class="subtabs" id="fmfail-subtabs"></div>
-        <div class="chart-box">
-          <svg id="fmfail-chart" class="bt-chart" viewBox="0 0 680 330" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="fmfail-title fmfail-sub"></svg>
-        </div>
-        <div class="chart-legend" id="fmfail-legend"></div>
-        <p class="chart-caption" id="fmfail-caption"></p>
-        <div id="fmfail-extra"></div>
+        <div class="mini-grid" id="fmfail-grid"></div>
       </div>
     </div>
   </div>
@@ -453,14 +433,7 @@
         <div class="img-box"><video src="media/mp_r5h25.mp4" poster="media/mp_r5h25.jpg" autoplay muted loop playsinline aria-label="Five robots: Pi-net (left) and ASPL (right) predicted trajectories against the ground truth"></video></div>
         <div class="app-body">
         <h3>Multi-robot motion planning</h3>
-        <ul class="res">
-          <li>Five robots over 25 steps under workspace, velocity, acceleration, jerk and collision constraints: ASPL follows the ground-truth trajectories (dashed) where &Pi;net drifts.</li>
-          <li>Training time <strong>stays flat</strong> in the active-set ratio while &Pi;net's climbs (8 robots, 50 steps, d&nbsp;=&nbsp;2,432).</li>
-        </ul>
-        <ul class="res">
-          <li>16 robots over 100 steps (d&nbsp;=&nbsp;9,664): ASPL's position error stays below &Pi;net's over most of the horizon.</li>
-          <li>Every output is feasible: the projection enforces all constraints exactly.</li>
-        </ul>
+        <p style="font-size:0.86rem; color:var(--slate-500); line-height:1.6; margin:0 4px;">ASPL follows the ground-truth trajectories where &Pi;net drifts, stays feasible everywhere, and keeps both training time and position error flat as robots and constraints are added.</p>
         </div>
       </div>
     </div>
@@ -533,7 +506,7 @@
       title: "Task-Specific Inference-Time Constraints",
       kind: "grouped",
       groups: ["open_laptop", "lift_pot", "pick_dual_bottles"],
-      seriesNames: ["ManiFlow", "+ task constraint"],
+      seriesNames: ["ManiFlow", "ASPL"],
       colors: [C.base, C.aspl],
       sub: { SR:"Success rate" },
       subDefault: "SR",
@@ -542,7 +515,7 @@
       series: { SR: [[50,84],[64,89],[68,77]] },
       yRange: { SR:[0,100] },
       caption: {
-        SR: "A constraint built from the diagnosed failure mode of each task, read only from the point cloud and the robot's own state at inference. lift_pot: 89 of 100 episodes tested so far with zero regressions, so 89/100 is a conservative current estimate; put_object_cabinet analysis is still running.",
+        SR: "A constraint built from each task's own failure mode, read only from the point cloud and the robot's own state at inference.",
       }
     }
   };
@@ -659,57 +632,28 @@
     legend(els.legend, cfg.seriesNames.map((n, i) => [n, cfg.colors[i]]));
   }
 
-  function mountSection(key) {
+  function mountGrid(key) {
     const cfg = BENCH[key];
-    let sub = cfg.subDefault;
-    const els = {
-      title: document.getElementById(`${key}-title`),
-      sub: document.getElementById(`${key}-sub`),
-      subtabs: document.getElementById(`${key}-subtabs`),
-      chart: document.getElementById(`${key}-chart`),
-      legend: document.getElementById(`${key}-legend`),
-      caption: document.getElementById(`${key}-caption`),
-      extra: document.getElementById(`${key}-extra`),
-    };
-
-    function render() {
-      if (cfg.kind === "line") renderLine(cfg, sub, els);
-      else if (cfg.kind === "grouped") renderGrouped(cfg, sub, els);
-      else renderBar(cfg, sub, els);
-      els.title.textContent = cfg.title;
-      els.sub.textContent = cfg.subtitle[sub];
-      els.caption.textContent = cfg.caption[sub] || "";
-      if (els.extra && key === "fmfail") {
-        const rows = [
-          ["open_laptop", "Read the task arm off the point cloud. If the policy's own plan already moves it, leave the chunk untouched; otherwise replan on a mirrored observation and hold the other arm still, then clip the grasp point to the point-cloud-estimated handle: <code>||TCP &minus; handle||&infin; &le; &epsilon;</code>."],
-          ["lift_pot", "Pull each hand toward its point-cloud-estimated handle, but only as fast as it can safely move and never tighter than the policy's own plan: <code>||TCP(t) &minus; handle|| &le; &epsilon; + min(plan_err(t), d&#8321; &minus; rate&middot;t)</code>."],
-          ["pick_dual_bottles", "Block the open gripper from overshooting past, descending onto, or swinging into the bottle before it closes: <code>depth(q) &ge; 0.095</code>, <code>|lateral(q)| &le; 0.02</code>, both only while <code>depth(q) &lt; 0.17</code>."],
-          ["put_object_cabinet", "Nudge the grasp point sideways to the point-cloud-estimated handle and correct the gripper's twist past 15&deg;: <code>&delta; = handle &minus; grasp_point</code>, applied when <code>0.01 &le; ||&delta;|| &le; 0.12</code>. Results pending."],
-        ];
-        els.extra.innerHTML = "<ul>" + rows.map(([t, d]) => `<li><strong>${t}</strong> &mdash; ${d}</li>`).join("") + "</ul>";
-      }
-    }
-
-    function renderSubtabs() {
-      const keys = Object.keys(cfg.sub);
-      if (keys.length < 2) { els.subtabs.innerHTML = ""; return; }
-      els.subtabs.innerHTML = keys.map(k =>
-        `<button class="st-btn${k === sub ? ' active' : ''}" data-sub="${k}" role="tab" aria-selected="${k === sub}">${cfg.sub[k]}</button>`
-      ).join("");
-      els.subtabs.querySelectorAll(".st-btn").forEach(btn => {
-        btn.addEventListener("click", () => {
-          sub = btn.dataset.sub;
-          renderSubtabs();
-          render();
-        });
-      });
-    }
-
-    renderSubtabs();
-    render();
+    const grid = document.getElementById(`${key}-grid`);
+    const keys = Object.keys(cfg.sub);
+    grid.innerHTML = keys.map(k => `
+      <div class="mini-chart"${keys.length === 1 ? ' style="grid-column:1/-1"' : ''}>
+        <div class="mini-head"><h4>${cfg.sub[k]}</h4><p>${cfg.subtitle[k]}</p></div>
+        <div class="chart-box"><svg class="bt-chart" viewBox="0 0 680 330" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${cfg.sub[k]}"></svg></div>
+        <div class="chart-legend"></div>
+        <p class="chart-caption"></p>
+      </div>`).join("");
+    keys.forEach((k, i) => {
+      const panel = grid.children[i];
+      const els = { chart: panel.querySelector("svg"), legend: panel.querySelector(".chart-legend") };
+      if (cfg.kind === "line") renderLine(cfg, k, els);
+      else if (cfg.kind === "grouped") renderGrouped(cfg, k, els);
+      else renderBar(cfg, k, els);
+      panel.querySelector(".chart-caption").textContent = cfg.caption[k] || "";
+    });
   }
 
-  ["qp", "ik", "fmfail"].forEach(mountSection);
+  ["qp", "ik", "fmfail"].forEach(mountGrid);
 })();
 </script>
 
