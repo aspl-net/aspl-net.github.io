@@ -497,10 +497,10 @@
       subDefault: "SR",
       metricLabel: { SR:"success rate (%)" },
       subtitle: { SR:"RoboTwin 2.0 · follow-up study, same 100 fixed episodes per task" },
-      series: { SR: [[50,84],[64,89],[68,77],[23,27]] },
+      series: { SR: [[50,84],[64,89],[68,77],[23,46]] },
       yRange: { SR:[0,100] },
       caption: {
-        SR: "A constraint built from each task's own failure mode, read only from the point cloud and the robot's own state at inference. put_object_cabinet shows the earlier general projection result while its own constraint is still being analyzed.",
+        SR: "A constraint built from each task's own failure mode, read only from the point cloud and the robot's own state at inference. lift_pot is from 89 of 100 episodes tested so far, with no regressions.",
       }
     }
   };
