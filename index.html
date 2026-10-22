@@ -124,18 +124,8 @@
     footer a { color:var(--blue-300); text-decoration:none; } footer a:hover { text-decoration:underline; }
     footer .sep { margin:0 8px; opacity:0.4; }
 
-    /* ---------- Benchmark tabs & charts ---------- */
-    .bench-tabs-wrap { margin-top:8px; }
-    .bench-tabs { display:flex; flex-wrap:wrap; justify-content:center; gap:10px; margin-bottom:20px; }
-    .bt-btn {
-      font-family:inherit; font-size:0.92rem; font-weight:600;
-      padding:9px 18px; border-radius:999px;
-      background:var(--white); color:var(--slate-700);
-      border:1.5px solid var(--slate-200); cursor:pointer;
-      transition:all 0.18s;
-    }
-    .bt-btn:hover { border-color:var(--blue-400); color:var(--blue-600); }
-    .bt-btn.active { background:var(--navy-900); color:var(--white); border-color:var(--navy-900); box-shadow:0 2px 10px rgba(15,23,42,0.14); }
+    /* ---------- Benchmark charts (stacked, no tabs) ---------- */
+    .bench-stack { display:flex; flex-direction:column; gap:28px; margin-top:8px; }
     .bench-card { background:var(--white); border:1px solid var(--slate-200); border-radius:var(--radius-lg); padding:24px 24px 20px; box-shadow:0 1px 3px rgba(15,23,42,0.04); }
     .bench-header { text-align:center; margin-bottom:8px; }
     .bench-header h3 { font-size:1.25rem; font-weight:700; color:var(--slate-800); margin:0; }
@@ -150,24 +140,24 @@
     .st-btn:hover { border-color:var(--blue-300); color:var(--blue-600); }
     .st-btn.active { background:var(--blue-50); color:var(--blue-600); border-color:var(--blue-300); }
     .chart-box { margin:6px auto 0; max-width:680px; }
-    #bt-chart { width:100%; height:auto; display:block; }
-    #bt-chart .draw { stroke-dasharray:1; stroke-dashoffset:1; animation:drawLine 1.4s ease-out forwards; }
-    #bt-chart .pop { opacity:0; animation:popIn 0.3s ease-out forwards; }
-    #bt-chart .grow { transform-box:fill-box; transform-origin:bottom; transform:scaleY(0); animation:growBar 0.7s ease-out forwards; }
+    .bt-chart { width:100%; height:auto; display:block; }
+    .bt-chart .draw { stroke-dasharray:1; stroke-dashoffset:1; animation:drawLine 1.4s ease-out forwards; }
+    .bt-chart .pop { opacity:0; animation:popIn 0.3s ease-out forwards; }
+    .bt-chart .grow { transform-box:fill-box; transform-origin:bottom; transform:scaleY(0); animation:growBar 0.7s ease-out forwards; }
     @keyframes drawLine { to { stroke-dashoffset:0; } }
     @keyframes popIn { to { opacity:1; } }
     @keyframes growBar { to { transform:scaleY(1); } }
-    @media (prefers-reduced-motion: reduce) { #bt-chart .draw, #bt-chart .pop, #bt-chart .grow { animation:none; opacity:1; transform:none; stroke-dashoffset:0; } }
+    @media (prefers-reduced-motion: reduce) { .bt-chart .draw, .bt-chart .pop, .bt-chart .grow { animation:none; opacity:1; transform:none; stroke-dashoffset:0; } }
     .chart-legend { display:flex; flex-wrap:wrap; justify-content:center; gap:16px; margin:6px 0 0; font-size:0.82rem; color:var(--slate-700); }
     .chart-legend span { display:inline-flex; align-items:center; gap:6px; }
     .chart-legend i { display:inline-block; width:12px; height:12px; border-radius:3px; }
     .chart-caption { font-style:italic; color:var(--slate-500); font-size:0.88rem; text-align:center; margin:8px 0 0; }
-    #bt-extra { max-width:640px; margin:14px auto 0; }
-    #bt-extra ul { margin:0; padding-left:0; list-style:none; }
-    #bt-extra li { font-size:0.88rem; color:var(--slate-600); line-height:1.6; padding:9px 0; border-top:1px solid var(--slate-100); }
-    #bt-extra li:first-child { border-top:none; }
-    #bt-extra li strong { color:var(--slate-800); }
-    #bt-extra code { background:var(--slate-100); color:var(--slate-700); border-radius:4px; padding:1px 5px; font-size:0.86em; }
+    #fmfail-extra { max-width:640px; margin:14px auto 0; }
+    #fmfail-extra ul { margin:0; padding-left:0; list-style:none; }
+    #fmfail-extra li { font-size:0.88rem; color:var(--slate-600); line-height:1.6; padding:9px 0; border-top:1px solid var(--slate-100); }
+    #fmfail-extra li:first-child { border-top:none; }
+    #fmfail-extra li strong { color:var(--slate-800); }
+    #fmfail-extra code { background:var(--slate-100); color:var(--slate-700); border-radius:4px; padding:1px 5px; font-size:0.86em; }
 
     @media (max-width:768px) {
       .hero h1 { font-size:2.2rem; }
@@ -175,8 +165,7 @@
       .proj-wrap { width:100%; max-width:480px; height:auto; aspect-ratio:420/280; }
       #hero3d { width:100%; height:auto; aspect-ratio:16/9; max-width:640px; }
       .highlights, .duo-grid, .trio-grid, .app-grid { grid-template-columns:1fr; }
-      .bt-btn { font-size:0.82rem; padding:7px 13px; }
-      #bt-chart { min-height:240px; }
+      .bt-chart { min-height:240px; }
       .abstract { text-align:left; }
     }
   </style>
@@ -347,25 +336,45 @@
 <section>
   <div class="container">
 
-    <div class="bench-tabs-wrap">
-      <div class="bench-tabs" role="tablist" aria-label="Benchmark">
-        <button class="bt-btn active" role="tab" data-tab="qp" aria-selected="true">Quadratic Programs</button>
-        <button class="bt-btn"        role="tab" data-tab="ik" aria-selected="false">Inverse Kinematics</button>
-        <button class="bt-btn"        role="tab" data-tab="fmfail" aria-selected="false">Task Constraints</button>
+    <div class="bench-stack">
+      <div class="bench-card">
+        <div class="bench-header">
+          <h3 id="qp-title">Quadratic Programs</h3>
+          <p id="qp-sub"></p>
+        </div>
+        <div class="subtabs" id="qp-subtabs"></div>
+        <div class="chart-box">
+          <svg id="qp-chart" class="bt-chart" viewBox="0 0 680 330" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="qp-title qp-sub"></svg>
+        </div>
+        <div class="chart-legend" id="qp-legend"></div>
+        <p class="chart-caption" id="qp-caption"></p>
       </div>
 
       <div class="bench-card">
         <div class="bench-header">
-          <h3 id="bt-title">Quadratic Programs</h3>
-          <p id="bt-sub"></p>
+          <h3 id="ik-title">Inverse Kinematics</h3>
+          <p id="ik-sub"></p>
         </div>
-        <div class="subtabs" id="bt-subtabs"></div>
+        <div class="subtabs" id="ik-subtabs"></div>
         <div class="chart-box">
-          <svg id="bt-chart" viewBox="0 0 680 330" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="bt-title bt-sub"></svg>
+          <svg id="ik-chart" class="bt-chart" viewBox="0 0 680 330" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="ik-title ik-sub"></svg>
         </div>
-        <div class="chart-legend" id="bt-legend"></div>
-        <p class="chart-caption" id="bt-caption"></p>
-        <div id="bt-extra"></div>
+        <div class="chart-legend" id="ik-legend"></div>
+        <p class="chart-caption" id="ik-caption"></p>
+      </div>
+
+      <div class="bench-card">
+        <div class="bench-header">
+          <h3 id="fmfail-title">Task Constraints</h3>
+          <p id="fmfail-sub"></p>
+        </div>
+        <div class="subtabs" id="fmfail-subtabs"></div>
+        <div class="chart-box">
+          <svg id="fmfail-chart" class="bt-chart" viewBox="0 0 680 330" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="fmfail-title fmfail-sub"></svg>
+        </div>
+        <div class="chart-legend" id="fmfail-legend"></div>
+        <p class="chart-caption" id="fmfail-caption"></p>
+        <div id="fmfail-extra"></div>
       </div>
     </div>
   </div>
@@ -451,16 +460,6 @@
     }
   };
 
-  let activeTab = "qp";
-  let activeSub = BENCH[activeTab].subDefault;
-
-  const $chart = document.getElementById("bt-chart");
-  const $title = document.getElementById("bt-title");
-  const $sub   = document.getElementById("bt-sub");
-  const $caption = document.getElementById("bt-caption");
-  const $subtabs = document.getElementById("bt-subtabs");
-  const $legend  = document.getElementById("bt-legend");
-
   const W = 680, H = 330, padL = 70, padR = 24, padT = 34, padB = 60;
   const plotW = W - padL - padR, plotH = H - padT - padB;
   const FONT = 'font-family="DM Sans, sans-serif"';
@@ -507,11 +506,11 @@
     s += `<text x="16" y="${padT + plotH/2}" fill="#64748b" font-size="11.5" ${FONT} transform="rotate(-90 16 ${padT + plotH/2})" text-anchor="middle">${label}</text>`;
     return s;
   }
-  function legend(items) {
-    $legend.innerHTML = items.map(([n, c]) => `<span><i style="background:${c}"></i>${n}</span>`).join("");
+  function legend(el, items) {
+    el.innerHTML = items.map(([n, c]) => `<span><i style="background:${c}"></i>${n}</span>`).join("");
   }
 
-  function renderLine(cfg, sub) {
+  function renderLine(cfg, sub, els) {
     const [lo, hi] = cfg.yRange[sub];
     const y = makeScale(lo, hi, true);
     const x = i => padL + 20 + (plotW - 40) * i / (RATIOS.length - 1);
@@ -531,11 +530,11 @@
                  : `<rect class="pop" style="animation-delay:${0.15 + i * 0.12}s" x="${x(i) - 3.5}" y="${y(v) - 3.5}" width="7" height="7" fill="${sr.color}" stroke="#fff" stroke-width="1.2"><title>${sr.name}: ${v}</title></rect>`;
       });
     });
-    $chart.innerHTML = s;
-    legend(cfg.series[sub].map(sr => [sr.name, sr.color]));
+    els.chart.innerHTML = s;
+    legend(els.legend, cfg.series[sub].map(sr => [sr.name, sr.color]));
   }
 
-  function renderBar(cfg, sub) {
+  function renderBar(cfg, sub, els) {
     const log = !!(cfg.log && cfg.log[sub]);
     const [lo, hi] = cfg.yRange[sub];
     const y = makeScale(lo, hi, log);
@@ -550,11 +549,11 @@
       s += `<text x="${bx + bw/2}" y="${top - 8}" text-anchor="middle" fill="#0f172a" font-size="13" font-weight="700" ${FONT}>${fmtVal(v, log)}</text>`;
       s += `<text x="${bx + bw/2}" y="${padT + plotH + 22}" text-anchor="middle" fill="${isA ? '#2563eb' : '#334155'}" font-size="12.5" font-weight="${isA ? 700 : 500}" ${FONT}>${m}</text>`;
     });
-    $chart.innerHTML = s;
-    $legend.innerHTML = "";
+    els.chart.innerHTML = s;
+    els.legend.innerHTML = "";
   }
 
-  function renderGrouped(cfg, sub) {
+  function renderGrouped(cfg, sub, els) {
     const [lo, hi] = cfg.yRange[sub];
     const y = makeScale(lo, hi, false);
     const groups = cfg.groups, k = cfg.seriesNames.length;
@@ -569,65 +568,61 @@
       });
       s += `<text x="${padL + slot * gi + slot/2}" y="${padT + plotH + 22}" text-anchor="middle" fill="#334155" font-size="12" ${FONT}>${g.replace(/_/g, "_​")}</text>`;
     });
-    $chart.innerHTML = s;
-    legend(cfg.seriesNames.map((n, i) => [n, cfg.colors[i]]));
+    els.chart.innerHTML = s;
+    legend(els.legend, cfg.seriesNames.map((n, i) => [n, cfg.colors[i]]));
   }
 
-  function renderChart(tab, sub) {
-    const cfg = BENCH[tab];
-    if (cfg.kind === "line") renderLine(cfg, sub);
-    else if (cfg.kind === "grouped") renderGrouped(cfg, sub);
-    else renderBar(cfg, sub);
-    $title.textContent = cfg.title;
-    $sub.textContent = cfg.subtitle[sub];
-    $caption.textContent = cfg.caption[sub] || "";
-    const $extra = document.getElementById("bt-extra");
-    if (tab === "fmfail") {
-      const rows = [
-        ["open_laptop", "Read the task arm off the point cloud. If the policy's own plan already moves it, leave the chunk untouched; otherwise replan on a mirrored observation and hold the other arm still, then clip the grasp point to the point-cloud-estimated handle: <code>||TCP &minus; handle||&infin; &le; &epsilon;</code>."],
-        ["lift_pot", "Pull each hand toward its point-cloud-estimated handle, but only as fast as it can safely move and never tighter than the policy's own plan: <code>||TCP(t) &minus; handle|| &le; &epsilon; + min(plan_err(t), d&#8321; &minus; rate&middot;t)</code>."],
-        ["pick_dual_bottles", "Block the open gripper from overshooting past, descending onto, or swinging into the bottle before it closes: <code>depth(q) &ge; 0.095</code>, <code>|lateral(q)| &le; 0.02</code>, both only while <code>depth(q) &lt; 0.17</code>."],
-        ["put_object_cabinet", "Nudge the grasp point sideways to the point-cloud-estimated handle and correct the gripper's twist past 15&deg;: <code>&delta; = handle &minus; grasp_point</code>, applied when <code>0.01 &le; ||&delta;|| &le; 0.12</code>. Results pending."],
-      ];
-      $extra.innerHTML = "<ul>" + rows.map(([t, d]) => `<li><strong>${t}</strong> &mdash; ${d}</li>`).join("") + "</ul>";
-    } else {
-      $extra.innerHTML = "";
+  function mountSection(key) {
+    const cfg = BENCH[key];
+    let sub = cfg.subDefault;
+    const els = {
+      title: document.getElementById(`${key}-title`),
+      sub: document.getElementById(`${key}-sub`),
+      subtabs: document.getElementById(`${key}-subtabs`),
+      chart: document.getElementById(`${key}-chart`),
+      legend: document.getElementById(`${key}-legend`),
+      caption: document.getElementById(`${key}-caption`),
+      extra: document.getElementById(`${key}-extra`),
+    };
+
+    function render() {
+      if (cfg.kind === "line") renderLine(cfg, sub, els);
+      else if (cfg.kind === "grouped") renderGrouped(cfg, sub, els);
+      else renderBar(cfg, sub, els);
+      els.title.textContent = cfg.title;
+      els.sub.textContent = cfg.subtitle[sub];
+      els.caption.textContent = cfg.caption[sub] || "";
+      if (els.extra && key === "fmfail") {
+        const rows = [
+          ["open_laptop", "Read the task arm off the point cloud. If the policy's own plan already moves it, leave the chunk untouched; otherwise replan on a mirrored observation and hold the other arm still, then clip the grasp point to the point-cloud-estimated handle: <code>||TCP &minus; handle||&infin; &le; &epsilon;</code>."],
+          ["lift_pot", "Pull each hand toward its point-cloud-estimated handle, but only as fast as it can safely move and never tighter than the policy's own plan: <code>||TCP(t) &minus; handle|| &le; &epsilon; + min(plan_err(t), d&#8321; &minus; rate&middot;t)</code>."],
+          ["pick_dual_bottles", "Block the open gripper from overshooting past, descending onto, or swinging into the bottle before it closes: <code>depth(q) &ge; 0.095</code>, <code>|lateral(q)| &le; 0.02</code>, both only while <code>depth(q) &lt; 0.17</code>."],
+          ["put_object_cabinet", "Nudge the grasp point sideways to the point-cloud-estimated handle and correct the gripper's twist past 15&deg;: <code>&delta; = handle &minus; grasp_point</code>, applied when <code>0.01 &le; ||&delta;|| &le; 0.12</code>. Results pending."],
+        ];
+        els.extra.innerHTML = "<ul>" + rows.map(([t, d]) => `<li><strong>${t}</strong> &mdash; ${d}</li>`).join("") + "</ul>";
+      }
     }
+
+    function renderSubtabs() {
+      const keys = Object.keys(cfg.sub);
+      if (keys.length < 2) { els.subtabs.innerHTML = ""; return; }
+      els.subtabs.innerHTML = keys.map(k =>
+        `<button class="st-btn${k === sub ? ' active' : ''}" data-sub="${k}" role="tab" aria-selected="${k === sub}">${cfg.sub[k]}</button>`
+      ).join("");
+      els.subtabs.querySelectorAll(".st-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          sub = btn.dataset.sub;
+          renderSubtabs();
+          render();
+        });
+      });
+    }
+
+    renderSubtabs();
+    render();
   }
 
-  function renderSubtabs(tab) {
-    const cfg = BENCH[tab];
-    const keys = Object.keys(cfg.sub);
-    if (keys.length < 2) { $subtabs.innerHTML = ""; return; }
-    $subtabs.innerHTML = keys.map(k =>
-      `<button class="st-btn${k === activeSub ? ' active' : ''}" data-sub="${k}" role="tab" aria-selected="${k === activeSub}">${cfg.sub[k]}</button>`
-    ).join("");
-    $subtabs.querySelectorAll(".st-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        activeSub = btn.dataset.sub;
-        renderSubtabs(tab);
-        renderChart(activeTab, activeSub);
-      });
-    });
-  }
-
-  document.querySelectorAll(".bt-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".bt-btn").forEach(b => {
-        b.classList.remove("active");
-        b.setAttribute("aria-selected", "false");
-      });
-      btn.classList.add("active");
-      btn.setAttribute("aria-selected", "true");
-      activeTab = btn.dataset.tab;
-      activeSub = BENCH[activeTab].subDefault;
-      renderSubtabs(activeTab);
-      renderChart(activeTab, activeSub);
-    });
-  });
-
-  renderSubtabs(activeTab);
-  renderChart(activeTab, activeSub);
+  ["qp", "ik", "fmfail"].forEach(mountSection);
 })();
 </script>
 
@@ -685,16 +680,6 @@
         </div>
         <div class="app-body">
         <h3>Constrained flow matching (RoboTwin&nbsp;2.0)</h3>
-        <table class="mini">
-          <thead><tr><th>success (100 episodes)</th><th>ManiFlow</th><th>+ ASPL</th></tr></thead>
-          <tbody>
-            <tr><td>lift_pot</td><td>64</td><td class="win">64</td></tr>
-            <tr><td>open_laptop</td><td>50</td><td class="win">50</td></tr>
-            <tr><td>pick_dual_bottles</td><td>68</td><td class="win">72</td></tr>
-            <tr><td>put_object_cabinet</td><td>23</td><td class="win">27</td></tr>
-            <tr class="total"><td>total (400 episodes)</td><td>205</td><td class="win">213</td></tr>
-          </tbody>
-        </table>
         <ul class="res">
           <li>Same episode, left ManiFlow, right ManiFlow + ASPL. Success <strong>never drops</strong> on any task and rises by 4 on two.</li>
         </ul>
