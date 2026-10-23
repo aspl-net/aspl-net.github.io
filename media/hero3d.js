@@ -462,7 +462,7 @@
   // ---------- timeline (seconds within a cycle): five narrated steps ----------
   const CYCLE = 18.0;
   const STEPS = [
-    [0.0, 3.4, "The network makes a guess, outside the allowed region."],
+    [0.0, 3.4, "The neural network makes an estimate, outside the allowed region."],
     [3.4, 6.6, "ASPL searches, step by step, for the nearest allowed point."],
     [6.6, 9.8, "Training pushes the output, partly out of the allowed region."],
     [9.8, 13.2, "ASPL keeps the part along the wall and removes the part that leaves the region."],

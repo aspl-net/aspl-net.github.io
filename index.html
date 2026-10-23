@@ -166,8 +166,8 @@
 <body>
 <header class="hero">
   <div class="hero-content">
-    <div class="proj-wrap" id="hero3d" aria-label="The network makes a guess outside the allowed region. ASPL moves it to the nearest allowed point, on the wall it touches. Training then pushes this output; ASPL keeps only the part of the push that runs along the wall and removes the part that would leave the region, so the output slides along the wall to a better answer while staying allowed.">
-      <span class="h3d-label lab-f" data-label="f">network's guess</span>
+    <div class="proj-wrap" id="hero3d" aria-label="The neural network makes an estimate outside the allowed region. ASPL moves it to the nearest allowed point, on the wall it touches. Training then pushes this output; ASPL keeps only the part of the push that runs along the wall and removes the part that would leave the region, so the output slides along the wall to a better answer while staying allowed.">
+      <span class="h3d-label lab-f" data-label="f">neural network estimate</span>
       <span class="h3d-label lab-y" data-label="y">output</span>
       <span class="h3d-label lab-face" data-label="face">wall it touches</span>
       <span class="h3d-label lab-grad" data-label="grad">training push</span>
@@ -177,7 +177,7 @@
       <span class="h3d-label lab-best" data-label="best">best point</span>
       <div class="hero-fallback">
       <!--
-        Static fallback without WebGL: the network's guess outside the allowed
+        Static fallback without WebGL: the neural network estimate outside the allowed
         region is moved to the nearest allowed point on the wall it touches,
         then training slides that output along the wall.
       -->
@@ -209,7 +209,7 @@
         <g filter="url(#nG)" opacity="0"><animate attributeName="opacity" to="1" dur="0.3s" begin="0.8s" fill="freeze"/>
           <circle cx="380" cy="110" r="8" fill="url(#ptBlue)"/>
         </g>
-        <text x="368" y="92" text-anchor="middle" fill="#1E3A8A" font-size="12" font-weight="700" font-family="DM Sans, sans-serif" opacity="0">network's guess<animate attributeName="opacity" to="1" dur="0.3s" begin="0.8s" fill="freeze"/></text>
+        <text x="368" y="92" text-anchor="middle" fill="#1E3A8A" font-size="12" font-weight="700" font-family="DM Sans, sans-serif" opacity="0">neural network estimate<animate attributeName="opacity" to="1" dur="0.3s" begin="0.8s" fill="freeze"/></text>
 
         <!-- solver iterates converging to the tight face -->
         <path d="M380,110 L332,152 L318,116 L299,146 L292,128 L285.2,135.8" fill="none" stroke="#60A5FA" stroke-width="2" stroke-dasharray="230" stroke-dashoffset="230" stroke-linejoin="round" opacity="0.9">
