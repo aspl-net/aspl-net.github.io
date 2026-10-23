@@ -381,9 +381,6 @@
 
     <div class="bench-stack" style="margin-top:28px;">
       <div class="bench-card">
-        <div class="bench-header">
-          <h3>Task-Specific Inference-Time Constraints</h3>
-        </div>
         <div class="mini-grid" id="fmfail-grid"></div>
       </div>
     </div>
@@ -486,10 +483,10 @@
       groups: ["open_laptop", "lift_pot", "pick_dual_bottles", "put_object_cabinet"],
       seriesNames: ["ManiFlow", "ASPL"],
       colors: [C.base, C.aspl],
-      sub: { SR:"Success rate" },
+      sub: { SR:"" },
       subDefault: "SR",
       metricLabel: { SR:"success rate (%)" },
-      subtitle: { SR:"RoboTwin 2.0 · follow-up study, same 100 fixed episodes per task" },
+      subtitle: { SR:"" },
       series: { SR: [[50,84],[64,89],[68,77],[23,46]] },
       yRange: { SR:[0,100] },
       caption: {
@@ -619,8 +616,8 @@
     const keys = Object.keys(cfg.sub);
     grid.innerHTML = keys.map(k => `
       <div class="mini-chart"${keys.length === 1 ? ' style="grid-column:1/-1"' : ''}>
-        <div class="mini-head"><h4>${cfg.sub[k]}</h4><p>${cfg.subtitle[k]}</p></div>
-        <div class="chart-box"><svg class="bt-chart" viewBox="0 0 680 330" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${cfg.sub[k]}"></svg></div>
+        ${cfg.sub[k] || cfg.subtitle[k] ? `<div class="mini-head"><h4>${cfg.sub[k]}</h4><p>${cfg.subtitle[k]}</p></div>` : ""}
+        <div class="chart-box"><svg class="bt-chart" viewBox="0 0 680 330" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${cfg.sub[k] || cfg.title}"></svg></div>
         <div class="chart-legend"></div>
         <p class="chart-caption"></p>
       </div>`).join("");
