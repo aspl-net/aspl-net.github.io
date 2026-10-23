@@ -53,7 +53,8 @@
     .lab-f { color:#1e3a8a; font-family:Georgia, serif; font-style:italic; font-size:15px; }
     .lab-y { color:#9a3412; font-family:Georgia, serif; font-style:italic; font-size:16px; }
     .lab-face, .lab-blocked { color:#c2410c; }
-    .lab-free { color:#1d4ed8; }
+    .lab-pass { color:#1d4ed8; }
+    .lab-grad { color:#1e3a8a; }
     .lab-C { color:#1e3a8a; font-family:Georgia, serif; font-style:italic; font-size:17px; font-weight:500; }
     @keyframes logoFadeIn { from { opacity:0; transform: scale(0.9) translateY(10px); } to { opacity:1; transform: scale(1) translateY(0); } }
     @keyframes fadeUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
@@ -160,11 +161,12 @@
 <body>
 <header class="hero">
   <div class="hero-content">
-    <div class="proj-wrap" id="hero3d" aria-label="A prediction f(x) is projected onto the feasible set C(x); the iterates land on the tight face, and training moves y along it">
+    <div class="proj-wrap" id="hero3d" aria-label="A prediction f(x) is projected onto the feasible set C(x) and lands on the tight face at y. The loss gradient at y splits: its in-face part passes through the layer and its outward part is blocked, so training moves y down the loss along the face.">
       <span class="h3d-label lab-f" data-label="f">f(x)</span>
       <span class="h3d-label lab-y" data-label="y">y</span>
       <span class="h3d-label lab-face" data-label="face">tight face</span>
-      <span class="h3d-label lab-free" data-label="free">free</span>
+      <span class="h3d-label lab-grad" data-label="grad">&minus;&nabla;loss</span>
+      <span class="h3d-label lab-pass" data-label="pass">passes</span>
       <span class="h3d-label lab-blocked" data-label="blocked">blocked</span>
       <span class="h3d-label lab-C" data-label="C">𝒞(x)</span>
       <div class="hero-fallback">

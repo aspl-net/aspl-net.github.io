@@ -1,9 +1,10 @@
 // Hero scene: a prediction f(x) outside a convex polytope C(x) is projected onto it.
-// Dykstra's algorithm (a true Euclidean-projection solver) zig-zags onto the tight face;
-// y = Pi_C(f) has free directions along the face and a blocked direction along its
-// outward normal, and f - y always lies on that normal. Training then moves f and y
-// together while y stays inside the face. Cycles over faces; drag to rotate.
-// Debug: ?t=4.2 freezes the timeline, ?seed=N fixes the random choices.
+// Dykstra's algorithm (an exact Euclidean-projection solver) zig-zags onto the tight face,
+// so y = Pi_C(f) and f - y lies on the face's outward normal. A quadratic loss on y is then
+// drawn as level sets on the face; its descent direction -grad L splits into an in-face part,
+// which the layer passes back, and a normal part, which it blocks. Training then moves y
+// (and f with it) down the loss along the face. Cycles over faces; drag to rotate.
+// Debug: ?t=8.2 freezes the timeline, ?seed=N fixes the random choices.
 (function () {
   const host = document.getElementById("hero3d");
   if (!host || !window.THREE) return;
@@ -39,7 +40,7 @@
     dome.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
     env.add(new THREE.Mesh(dome, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
     [[V(4, 6, 5), 5], [V(-6, 2, -3), 3]].forEach(([p, s]) => {
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(s, s), new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide }));
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(s, s), new THREE.MeshBasicMaterial({ color: 0xdce7f7, side: THREE.DoubleSide }));
       m.position.copy(p); m.lookAt(0, 0, 0); env.add(m);
     });
     const pm = new THREE.PMREMGenerator(renderer);
@@ -58,23 +59,70 @@
   const world = new THREE.Group();
   scene.add(world);
 
-  // ---------- feasible set: an irregular dodecahedron (convex polytope) ----------
-  const geo = new THREE.DodecahedronGeometry(1.15, 0);
-  geo.scale(1.25, 0.95, 1.05);
-  geo.rotateZ(0.18);
-  geo.computeVertexNormals();
-  const glass = { color: 0x6fa2ec, roughness: 0.14, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08,
-    envMapIntensity: 0.75, flatShading: true, transparent: true, depthWrite: false };
+  // ---------- feasible set: a bevelled irregular dodecahedron, built from its half-spaces ----------
+  // The bevels sit about 32 degrees from the faces they join, so an exact projection solver
+  // visibly zig-zags between a face and its bevel before it settles.
+  const geo = (() => {
+    const base = new THREE.DodecahedronGeometry(1.15, 0);
+    base.scale(1.25, 0.95, 1.05);
+    base.rotateZ(0.18);
+    const bp = base.attributes.position, planes = [];
+    for (let i = 0; i < bp.count; i += 3) {
+      const a = V().fromBufferAttribute(bp, i), b = V().fromBufferAttribute(bp, i + 1), c = V().fromBufferAttribute(bp, i + 2);
+      const n = V().subVectors(b, a).cross(V().subVectors(c, a)).normalize();
+      if (n.dot(a) < 0) n.negate();
+      if (!planes.some(P => P.n.dot(n) > 0.999)) planes.push({ n, d: n.dot(a), pts: [a, b, c] });
+      else planes.find(P => P.n.dot(n) > 0.999).pts.push(a, b, c);
+    }
+    const BEVEL = 0.06, all = planes.map(P => ({ n: P.n, d: P.d }));
+    for (let i = 0; i < planes.length; i++) for (let j = i + 1; j < planes.length; j++) {
+      const sh = planes[i].pts.filter(p => Math.abs(planes[j].n.dot(p) - planes[j].d) < 1e-5);
+      if (sh.length < 2) continue;
+      const m = V().addVectors(planes[i].n, planes[j].n).normalize();
+      all.push({ n: m, d: m.dot(sh[0]) - BEVEL });
+    }
+    // vertices = feasible intersections of three planes
+    const vs = [];
+    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) for (let k = j + 1; k < all.length; k++) {
+      const M = new THREE.Matrix3().set(all[i].n.x, all[i].n.y, all[i].n.z, all[j].n.x, all[j].n.y, all[j].n.z, all[k].n.x, all[k].n.y, all[k].n.z);
+      if (Math.abs(M.determinant()) < 1e-6) continue;
+      const x = V(all[i].d, all[j].d, all[k].d).applyMatrix3(M.invert());
+      if (all.every(P => P.n.dot(x) <= P.d + 1e-7) && !vs.some(v => v.distanceTo(x) < 1e-6)) vs.push(x);
+    }
+    const tri = [], polys = [];
+    all.forEach(P => {
+      const on = vs.filter(v => Math.abs(P.n.dot(v) - P.d) < 1e-6);
+      if (on.length < 3) return;
+      const c = on.reduce((s, v) => s.add(v), V()).multiplyScalar(1 / on.length);
+      const t1 = V().subVectors(on[0], c).normalize(), t2 = V().crossVectors(P.n, t1);
+      on.sort((p, q) => Math.atan2(V().subVectors(p, c).dot(t2), V().subVectors(p, c).dot(t1)) - Math.atan2(V().subVectors(q, c).dot(t2), V().subVectors(q, c).dot(t1)));
+      for (let i = 0; i < on.length; i++) tri.push(c, on[i], on[(i + 1) % on.length]);
+      polys.push({ n: P.n, d: P.d, verts: on });
+    });
+    const g = new THREE.BufferGeometry().setFromPoints(tri);
+    g.computeVertexNormals();
+    g.userData.polys = polys;
+    return g;
+  })();
+  const glass = { color: 0x6fa2ec, roughness: 0.34, metalness: 0, clearcoat: 0.55, clearcoatRoughness: 0.18,
+    envMapIntensity: 0.55, flatShading: true, transparent: true, depthWrite: false };
   const inner = new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial(Object.assign({}, glass, { side: THREE.BackSide, opacity: 0.36, color: 0x4a84dc })));
   const shell = new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial(Object.assign({}, glass, { side: THREE.FrontSide, opacity: 0.34 })));
   inner.renderOrder = 0; shell.renderOrder = 2;
   world.add(inner, shell);
   {
+    // edges of the twelve main faces read strongly; the bevel seams stay faint
     const eg = new THREE.EdgesGeometry(geo, 1).attributes.position;
-    const em = new THREE.MeshBasicMaterial({ color: NAVY, transparent: true, opacity: 0.8 });
+    const em = new THREE.MeshBasicMaterial({ color: NAVY, transparent: true, opacity: 0.7 });
+    const emSoft = new THREE.MeshBasicMaterial({ color: NAVY, transparent: true, opacity: 0.5 });
+    const polys = geo.userData.polys;
+    const area = P => P.verts.reduce((s, v, i) => s + V().subVectors(v, P.verts[0]).cross(V().subVectors(P.verts[(i + 1) % P.verts.length], P.verts[0])).length() / 2, 0);
+    polys.forEach(P => { P.area = area(P); });
+    const aMax = Math.max(...polys.map(P => P.area));
     for (let i = 0; i < eg.count; i += 2) {
       const a = V().fromBufferAttribute(eg, i), b = V().fromBufferAttribute(eg, i + 1), d = V().subVectors(b, a);
-      const r = new THREE.Mesh(new THREE.CylinderGeometry(0.0075, 0.0075, d.length(), 6), em);
+      const main = polys.some(P => P.area > 0.5 * aMax && Math.abs(P.n.dot(a) - P.d) < 1e-6 && Math.abs(P.n.dot(b) - P.d) < 1e-6);
+      const r = new THREE.Mesh(new THREE.CylinderGeometry(main ? 0.0068 : 0.0052, main ? 0.0068 : 0.0052, d.length(), 6), main ? em : emSoft);
       r.position.copy(a).addScaledVector(d, 0.5);
       r.quaternion.setFromUnitVectors(V(0, 1, 0), d.normalize());
       r.renderOrder = 3;
@@ -94,15 +142,7 @@
 
   // planar faces as half-spaces n.x <= d with outward unit normal n
   const pos = geo.attributes.position;
-  const faces = [];
-  for (let i = 0; i < pos.count; i += 3) {
-    const a = V().fromBufferAttribute(pos, i), b = V().fromBufferAttribute(pos, i + 1), c = V().fromBufferAttribute(pos, i + 2);
-    const n = V().subVectors(b, a).cross(V().subVectors(c, a)).normalize();
-    if (n.dot(a) < 0) n.negate();
-    let f = faces.find(F => F.n.dot(n) > 0.999 && Math.abs(F.n.dot(a) - F.d) < 1e-4);
-    if (!f) { f = { n, d: n.dot(a), verts: [] }; faces.push(f); }
-    [a, b, c].forEach(v => { if (!f.verts.some(w => w.distanceTo(v) < 1e-5)) f.verts.push(v); });
-  }
+  const faces = geo.userData.polys.map(P => ({ n: P.n.clone(), d: P.d, verts: P.verts.map(v => v.clone()) }));
   function distToEdge(F, a, b, p) {
     // in-plane distance from p to edge line ab, positive towards the face interior
     const e = V().subVectors(b, a).normalize();
@@ -123,6 +163,7 @@
     F.verts.sort((p, q) => ang(p) - ang(q));
     F.r = insideMargin(F, F.c);
   });
+  { const rMax = Math.max(...faces.map(G => G.r)); faces.forEach(G => { G.big = G.r > 0.6 * rMax; }); }
   // Dykstra's algorithm onto the intersection of all half-spaces = exact Euclidean projection
   function dykstra(x0, order, cycles, record) {
     let x = x0.clone();
@@ -189,18 +230,32 @@
   const ySphere = new THREE.Mesh(new THREE.SphereGeometry(0.07, 24, 16), mat(ORANGE, { emissive: 0xea580c, emissiveIntensity: 0.45 }));
   const glow = new THREE.Mesh(new THREE.SphereGeometry(0.16, 24, 16), new THREE.MeshBasicMaterial({ color: ORANGE, transparent: true, opacity: 0, depthWrite: false }));
   world.add(fSphere, ySphere, glow);
-  // residual f(x) - y as dashes along the outward normal, and a right-angle mark at y
-  const dashMat = new THREE.MeshBasicMaterial({ color: NAVY, transparent: true, opacity: 0, depthWrite: false });
+  // dashed segments (residual f - y, and the sides of the gradient split)
   const dashGeo = new THREE.CylinderGeometry(0.008, 0.008, 1, 6); dashGeo.translate(0, 0.5, 0);
-  const dashes = [];
-  for (let k = 0; k < 18; k++) { const d = new THREE.Mesh(dashGeo, dashMat); d.renderOrder = 4; dashes.push(d); world.add(d); }
+  function dashPool(n, color) {
+    const m = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false });
+    const list = [];
+    for (let k = 0; k < n; k++) { const d = new THREE.Mesh(dashGeo, m); d.renderOrder = 4; d.visible = false; list.push(d); world.add(d); }
+    return { m, list };
+  }
+  function dashLine(pool, from, a, b, DL, GAP, skip0) {
+    const d = V().subVectors(b, a), L = d.length(); d.normalize();
+    let k = from;
+    for (let s = skip0 || 0; s + DL <= L + 1e-6 && k < pool.list.length; s += DL + GAP, k++) {
+      const m = pool.list[k];
+      m.visible = true; m.position.copy(a).addScaledVector(d, s);
+      m.quaternion.setFromUnitVectors(V(0, 1, 0), d); m.scale.set(1, DL, 1);
+    }
+    return k;
+  }
+  const resDash = dashPool(18, NAVY), splitDash = dashPool(28, NAVY);
   const cornerMat = new THREE.MeshBasicMaterial({ color: NAVY, transparent: true, opacity: 0, depthWrite: false });
   const cornerGeo = new THREE.CylinderGeometry(0.011, 0.011, 1, 6); cornerGeo.translate(0, 0.5, 0);
   const corner = [0, 1].map(() => { const m = new THREE.Mesh(cornerGeo, cornerMat); m.renderOrder = 4; world.add(m); return m; });
   // solver path: one tube per Dykstra step, revealed in order, with a bead running along it
   const itMat = mat(0x3b82f6, { emissive: 0x2563eb, emissiveIntensity: 0.5 });
   const dotMat = mat(0xe0edff, { emissive: 0x93c5fd, emissiveIntensity: 0.6 });
-  const MAXIT = 14;
+  const MAXIT = 16;
   const segGeo = new THREE.CylinderGeometry(0.011, 0.011, 1, 8); segGeo.translate(0, 0.5, 0);
   const segs = [], dots = [];
   for (let k = 0; k < MAXIT; k++) {
@@ -209,25 +264,59 @@
   }
   const bead = new THREE.Mesh(new THREE.SphereGeometry(0.04, 18, 12), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0 }));
   bead.renderOrder = 5; world.add(bead);
-  const free1 = arrow(BLUE), free2 = arrow(BLUE), blocked = arrow(ORANGE);
+  // loss on the face: level sets and the minimizer
+  const contourMat = new THREE.LineBasicMaterial({ color: NAVY, transparent: true, opacity: 0, depthWrite: false });
+  let contours = null;
+  const ringMat = new THREE.MeshBasicMaterial({ color: NAVY, transparent: true, opacity: 0, depthWrite: false });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.009, 8, 40), ringMat);
+  const ringDot = new THREE.Mesh(new THREE.SphereGeometry(0.02, 12, 8), ringMat);
+  ring.renderOrder = ringDot.renderOrder = 4; world.add(ring, ringDot);
+  // descent direction -grad L at y and its split into the passed (in-face) and blocked (normal) parts
+  const gArr = arrow(NAVY), passArr = arrow(BLUE), blockArr = arrow(ORANGE);
+  // gradient-descent trail on the face, older steps fade
+  const NGD = 14;
+  const trailSegs = [], trailDots = [];
+  for (let k = 0; k < NGD; k++) {
+    const m = new THREE.MeshBasicMaterial({ color: ORANGE, transparent: true, opacity: 0, depthWrite: false });
+    const sg = new THREE.Mesh(segGeo, m); sg.renderOrder = 4; trailSegs.push(sg); world.add(sg);
+    const d = new THREE.Mesh(new THREE.SphereGeometry(0.02, 12, 8), m); d.renderOrder = 4; trailDots.push(d); world.add(d);
+  }
 
-  let F, y0, h, its, faceLabelAt, freeA, freeB, trainU, trainW, trainA, trainB;
+  // loss L(y) = 1/2 (y - t)^T A (y - t), A = A1 u u^T + A2 w w^T + A3 n n^T, t = ys + tn n.
+  // u, w span the face, so on the face L is an elliptic bowl centred at ys; t lies outside C,
+  // so -grad L also points out of the face, and that part is what the layer blocks.
+  const A1 = 1, A2 = 3.2, A3 = 1, ETA = 0.21;
+  let F, y0, h, its, faceLabelAt, freeB, loss = null;
+  function gradL(y) {
+    const d = V().subVectors(y, loss.t);
+    return V().addScaledVector(loss.u, A1 * loss.u.dot(d)).addScaledVector(loss.w, A2 * loss.w.dot(d)).addScaledVector(F.n, A3 * F.n.dot(d));
+  }
+  function lossVal(y) {
+    const d = V().subVectors(y, loss.t);
+    return 0.5 * (A1 * loss.u.dot(d) ** 2 + A2 * loss.w.dot(d) ** 2 + A3 * F.n.dot(d) ** 2);
+  }
+  const projT = g => g.clone().addScaledVector(F.n, -g.dot(F.n));
+  function gdPath() {
+    // the training step through the layer: y <- y - eta * P_T grad L(y)  (P_T = Jacobian of the projection)
+    const P = [y0.clone()];
+    for (let k = 0; k < NGD; k++) P.push(P[k].clone().addScaledVector(projT(gradL(P[k])), -ETA));
+    return P;
+  }
   const labels = {};
   host.querySelectorAll("[data-label]").forEach(el => { labels[el.dataset.label] = el; });
 
   // the chosen face is turned so its outward normal points here (world frame):
   // toward the camera, to the right and slightly up, so f(x) floats in open space.
-  const NSTAR = V(0.63, 0.17, 0.76).normalize();
+  const NSTAR = V(0.7, 0.18, 0.69).normalize();
   let lastFace = -1;
   function pickFace(q) {
-    // a face that needs a moderate turn to reach NSTAR, never the previous one
     const cand = [];
     faces.forEach((G, i) => {
-      if (i === lastFace) return;
+      if (i === lastFace || !G.big) return;
       const c = G.n.clone().applyQuaternion(q).dot(NSTAR);
       if (c > 0.05 && c < 0.8) cand.push(i);
     });
-    const pool = cand.length ? cand : faces.map((_, i) => i).filter(i => i !== lastFace);
+    const pool = cand.length ? cand : faces.map((_, i) => i).filter(i => i !== lastFace && faces[i].big);
     lastFace = pool[Math.floor(rand() * pool.length)];
     return lastFace;
   }
@@ -245,6 +334,7 @@
     const g = new THREE.BufferGeometry().setFromPoints(pts);
     g.setIndex(idx);
     faceMesh = new THREE.Mesh(g, faceMat);
+    faceMesh.renderOrder = 2.5;
     world.add(faceMesh);
     faceEdges = new THREE.Group();
     F.verts.forEach((v, i) => faceEdges.add(rod(v, F.verts[(i + 1) % F.verts.length], 0.022, edgeMat)));
@@ -253,7 +343,6 @@
     // y0: interior point shifted toward one edge, so f also violates the neighbouring face
     // and the solver has to zig-zag between the two before settling on the tight face.
     const qi = q.clone().invert();
-    // the shared edge toward screen-up: the zig-zag then opens across the f -> y line
     const upL = V(0, 1, 0).applyQuaternion(qi);
     upL.addScaledVector(F.n, -upL.dot(F.n)).normalize();
     let ei = 0, eb = -1e9;
@@ -281,116 +370,185 @@
       sg.position.copy(a); sg.quaternion.setFromUnitVectors(V(0, 1, 0), d.clone().normalize()); sg.userData.L = d.length();
     });
     dots.forEach((d, k) => { d.userData.on = k + 1 < its.length - 1; if (d.userData.on) d.position.copy(its[k + 1]); });
-    // free directions: the in-face directions that read best on screen (screen-right and its in-face normal)
-    freeA = V().subVectors(F.c, y0).normalize();
-    freeB = V().crossVectors(F.n, freeA).normalize();
+    freeB = V().crossVectors(F.n, V().subVectors(F.c, y0).normalize()).normalize();
     if (freeB.clone().applyQuaternion(q).x < 0) freeB.negate();
 
-    // training path: a smooth closed loop that starts at y0 and sweeps through the face
-    // interior; shrunk until every point keeps a margin from the face boundary
-    trainU = V().subVectors(F.c, y0); trainA = 0.5 * trainU.length(); trainU.normalize();
-    trainW = V().crossVectors(F.n, trainU).normalize();
-    trainB = 0.6 * F.r;
-    for (let tries = 0; tries < 40; tries++) {
-      let ok = true;
-      for (let s = 0; s < 96 && ok; s++) if (insideMargin(F, trainPoint(s / 96)) < 0.06) ok = false;
-      if (ok) break;
-      trainB *= 0.9;
+    // loss: minimizer ys inside the face, bowl axes u, w; keep a candidate whose descent path
+    // stays well inside the face, travels far enough to read, and visibly bends.
+    const dir = V().subVectors(F.c, y0).normalize(), side = V().crossVectors(F.n, dir);
+    let pick = null, fallback = null;
+    for (let tries = 0; tries < 160 && !pick; tries++) {
+      const rho = (0.2 + 0.4 * rand()) * F.r, ang = (2 * rand() - 1) * 1.1, phi = rand() * Math.PI;
+      const ys = F.c.clone().addScaledVector(dir, rho * Math.cos(ang)).addScaledVector(side, rho * Math.sin(ang));
+      const u = F.t1.clone().multiplyScalar(Math.cos(phi)).addScaledVector(F.t2, Math.sin(phi)).normalize();
+      const w = V().crossVectors(F.n, u).normalize();
+      loss = { ys, u, w, t: ys.clone() };
+      const gT = projT(gradL(y0)).length();
+      loss.t = ys.clone().addScaledVector(F.n, 0.9 * gT / A3);
+      const P = gdPath();
+      const minM = Math.min(...P.map(p => insideMargin(F, p)));
+      const chord = V().subVectors(P[NGD], y0), cl = chord.length();
+      let bend = 0;
+      P.forEach(p => { const r = V().subVectors(p, y0); bend = Math.max(bend, r.addScaledVector(chord, -r.dot(chord) / (cl * cl)).length()); });
+      // on screen the passed direction should point down, so the blocked one lands to the right
+      const gw = projT(gradL(y0)).negate().applyQuaternion(q);
+      const down = -gw.y / Math.hypot(gw.x, gw.y);
+      const c = { ys, u, w, t: loss.t, P, minM, bend, cl, down };
+      if (minM > 0.07 && (!fallback || down > fallback.down)) fallback = c;
+      if (minM > 0.07 && cl > 0.42 && bend > 0.07 && down > 0.75) pick = c;
     }
+    if (!fallback) fallback = { ys: F.c.clone(), u: F.t1.clone(), w: F.t2.clone(), t: F.c.clone().addScaledVector(F.n, 0.3), minM: 0, bend: 0, cl: 0, down: 0 };
+    loss = pick || fallback;
+    if (!loss.P) loss.P = gdPath();
+    loss.gT0 = projT(gradL(y0)).length();
+    loss.GS = 0.48 / loss.gT0;
+    loss.side = V().crossVectors(F.n, projT(gradL(y0)).normalize()).normalize();               // display scale: the in-face part is drawn 0.48 long
+    loss.L = loss.P.map(p => lossVal(p));
+    loss.cumT = [0];
+    for (let k = 0; k < NGD; k++) loss.cumT.push(loss.cumT[k] + Math.pow(loss.P[k].distanceTo(loss.P[k + 1]), 0.55));
+    // level sets of L on the face plane (true ellipses), clipped to the face polygon
+    if (contours) { world.remove(contours); contours.geometry.dispose(); }
+    const L0 = 0.5 * (A1 * loss.u.dot(V().subVectors(y0, loss.ys)) ** 2 + A2 * loss.w.dot(V().subVectors(y0, loss.ys)) ** 2);
+    const cp = [];
+    [0.06, 0.25, 0.55, 1.0, 1.6, 2.4].forEach(s => {
+      const c = s * L0, ra = Math.sqrt(2 * c / A1), rb = Math.sqrt(2 * c / A2);
+      let prev = null;
+      for (let k = 0; k <= 160; k++) {
+        const th = k / 160 * Math.PI * 2;
+        const p = loss.ys.clone().addScaledVector(loss.u, ra * Math.cos(th)).addScaledVector(loss.w, rb * Math.sin(th));
+        const ok = insideMargin(F, p) > 0.012;
+        const pl = p.addScaledVector(F.n, 0.006);
+        if (ok && prev) cp.push(prev, pl);
+        prev = ok ? pl : null;
+      }
+    });
+    contours = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(cp), contourMat);
+    contours.renderOrder = 4;
+    world.add(contours);
+    ring.position.copy(loss.ys).addScaledVector(F.n, 0.008);
+    ring.quaternion.setFromUnitVectors(V(0, 0, 1), F.n);
+    ringDot.position.copy(ring.position);
+    trailSegs.forEach((sg, k) => {
+      const a = loss.P[k], b = loss.P[k + 1], d = V().subVectors(b, a);
+      sg.position.copy(a); sg.quaternion.setFromUnitVectors(V(0, 1, 0), d.clone().normalize()); sg.userData.L = d.length();
+      trailDots[k].position.copy(a);
+    });
+
     let far = F.verts[0], fd = -1;
     F.verts.forEach(v => { const d = v.distanceTo(fpt); if (d > fd) { fd = d; far = v; } });
     faceLabelAt = far.clone().addScaledVector(V().subVectors(far, F.c).normalize(), 0.12);
 
     // numerical checks
     const yStar = dykstra(fpt, order, 400, false);
-    let minIn = 1e9; for (let s = 0; s < 200; s++) minIn = Math.min(minIn, insideMargin(F, trainPoint(s / 200)));
-    let projErrTrain = 0;
-    for (let s = 0; s < 8; s++) {
-      const yt = trainPoint(s / 8), ft = yt.clone().addScaledVector(F.n, h);
-      projErrTrain = Math.max(projErrTrain, dykstra(ft, order, 400, false).distanceTo(yt));
-    }
+    let projErrPath = 0, passDotN = 0, maxRise = -1e9;
+    loss.P.forEach((p, k) => {
+      projErrPath = Math.max(projErrPath, dykstra(p.clone().addScaledVector(F.n, h), order, 400, false).distanceTo(p));
+      passDotN = Math.max(passDotN, Math.abs(projT(gradL(p)).dot(F.n)));
+      if (k) maxRise = Math.max(maxRise, loss.L[k] - loss.L[k - 1]);
+    });
+    const gN = gradL(y0).dot(F.n);
     Object.assign(dbg, {
-      face: fi, h: +h.toFixed(3), iterates: its.length,
-      projErr: yStar.distanceTo(y0), projErrTrain,
-      y0Margin: insideMargin(F, y0), trainMinMargin: minIn,
-      freeDotN: Math.max(Math.abs(freeA.dot(F.n)), Math.abs(freeB.dot(F.n))),
-      outward: F.n.dot(F.c) > 0, onPlane: Math.abs(F.n.dot(y0) - F.d)
+      face: fi, h: +h.toFixed(3), iterates: its.length, visibleSteps: its.filter((p, k) => k && p.distanceTo(its[k - 1]) > 0.02).length,
+      projErr: yStar.distanceTo(y0), projErrPath, passDotN, gradNormalOutward: gN < 0,
+      lossMonotone: maxRise < 0, maxRise, lossDrop: loss.L[NGD] / loss.L[0] ,
+      pathMinMargin: loss.minM, pathBend: loss.bend, pathChord: loss.cl, picked: !!pick,
+      onPlane: Math.max(...loss.P.map(p => Math.abs(F.n.dot(p) - F.d))),
+      minimizerMargin: insideMargin(F, loss.ys), finalDist: loss.P[NGD].distanceTo(loss.ys)
     });
     return q;
   }
-  function trainPoint(s) {
-    const th = s * Math.PI * 2;
-    const p = y0.clone().addScaledVector(trainU, trainA * (1 - Math.cos(th))).addScaledVector(trainW, trainB * Math.sin(th));
-    return p.addScaledVector(F.n, F.d - F.n.dot(p));
-  }
 
-  // ---------- timeline ----------
-  const CYCLE = 10.0;
+  // ---------- timeline (seconds within a cycle) ----------
+  const CYCLE = 15.0;
   const ease = (a, b, t) => { const u = Math.min(Math.max((t - a) / (b - a), 0), 1); return u * u * (3 - 2 * u); };
+  const lin = (a, b, t) => Math.min(Math.max((t - a) / (b - a), 0), 1);
   function setOpacity(m, o) { m.opacity = o; m.visible = o > 0.003; }
   const tmp = V();
-
   function toScreen(p3, W, H) {
     tmp.copy(p3).applyMatrix4(world.matrixWorld).project(camera);
     return { x: (tmp.x * 0.5 + 0.5) * W, y: (-tmp.y * 0.5 + 0.5) * H };
   }
+  function yAt(tc) {
+    // y follows the gradient-descent iterates, one eased hop per step; a hop's duration
+    // grows with its length, so long early hops do not flash past and late ones settle
+    const u = lin(9.4, 13.2, tc) * loss.cumT[NGD];
+    let k = 0; while (k < NGD - 1 && loss.cumT[k + 1] <= u) k++;
+    const fr = Math.min((u - loss.cumT[k]) / (loss.cumT[k + 1] - loss.cumT[k]), 1);
+    return { y: loss.P[k].clone().lerp(loss.P[k + 1], ease(0, 1, fr)), s: k + fr };
+  }
+
   function update(tc, T) {
-    tc -= 0.8;
-    const appear = ease(0.0, 0.5, tc), out = 1 - ease(CYCLE - 1.6, CYCLE - 0.8, tc);
-    const slide = ease(5.0, CYCLE - 2.0, tc);
-    const yy = trainPoint(slide);
+    const appear = ease(0.8, 1.3, tc), out = 1 - ease(13.9, 14.7, tc);
+    const { y: yy, s: gs } = yAt(tc);
     const fpt = yy.clone().addScaledVector(F.n, h);
     fSphere.position.copy(fpt);
     setOpacity(fSphere.material, appear * out);
-    // iterates
-    const u = Math.min(Math.max((tc - 0.6) / 2.4, 0), 1);
-    const drawK = (1 - Math.pow(1 - u, 1.6)) * (its.length - 1);
+    // solver iterates
+    const u = lin(1.4, 4.2, tc);
+    const drawK = (1 - Math.pow(1 - u, 1.35)) * (its.length - 1);
     segs.forEach((sg, k) => {
       const part = Math.min(Math.max(drawK - k, 0), 1);
       sg.visible = sg.userData.on && part > 0;
       if (sg.visible) sg.scale.set(1, sg.userData.L * part, 1);
     });
     dots.forEach((d, k) => { d.visible = d.userData.on && drawK >= k + 1; });
-    const fadeIt = out * (1 - ease(4.4, 5.4, tc));
+    const fadeIt = out * (1 - ease(5.4, 6.4, tc));
     setOpacity(itMat, 0.9 * fadeIt); setOpacity(dotMat, fadeIt);
     { const k = Math.min(Math.floor(drawK), its.length - 2), fr = drawK - k;
       bead.position.copy(its[k]).lerp(its[k + 1], Math.min(fr, 1));
       setOpacity(bead.material, u > 0 && u < 1 ? 0.95 * out : 0); }
-    // tight face
-    const faceOn = ease(2.6, 3.3, tc) * out;
-    faceMat.opacity = 0.62 * faceOn;
+    // tight face and y
+    const faceOn = ease(3.9, 4.5, tc) * out;
+    faceMat.opacity = (0.62 + 0.28 * ease(5.2, 6.2, tc)) * faceOn;
+    // once the solver path has gone, the face hides the seams behind it so the loss map reads cleanly
+    faceMat.depthWrite = tc > 6.3 && tc < 13.9;
     setOpacity(edgeMat, faceOn);
-    // y
     ySphere.position.copy(yy);
     glow.position.copy(yy);
-    const yOn = ease(3.0, 3.4, tc) * out;
+    const yOn = ease(4.2, 4.6, tc) * out;
     setOpacity(ySphere.material, yOn);
     glow.material.opacity = 0.22 * yOn * (0.75 + 0.25 * Math.sin(T * 4));
     glow.visible = yOn > 0;
-    // residual f - y, always along the outward normal (optimality: f - y is normal to the face)
-    const resOn = ease(4.6, 5.2, tc) * out;
-    const DL = 0.045, GAP = 0.035, nD = Math.min(dashes.length, Math.floor(h / (DL + GAP)));
-    dashes.forEach((d, k) => {
-      d.visible = resOn > 0.01 && k < nD;
-      if (!d.visible) return;
-      d.position.copy(yy).addScaledVector(F.n, 0.06 + k * (DL + GAP));
-      d.quaternion.setFromUnitVectors(V(0, 1, 0), F.n);
-      d.scale.set(1, DL, 1);
-    });
-    dashMat.opacity = 0.7 * resOn;
-    const cs = 0.12;
+    // residual f - y along the outward normal, right-angle mark while it is introduced
+    const resOn = ease(4.7, 5.4, tc) * out;
+    resDash.list.forEach(d => { d.visible = false; });
+    if (resOn > 0.01) dashLine(resDash, 0, yy.clone().addScaledVector(F.n, 0.06), fpt.clone().addScaledVector(F.n, -0.07), 0.045, 0.035);
+    resDash.m.opacity = 0.55 * resOn;
+    const cs = 0.12, cOn = resOn * (1 - ease(6.2, 6.8, tc));
     corner[0].position.copy(yy).addScaledVector(F.n, cs); corner[0].quaternion.setFromUnitVectors(V(0, 1, 0), freeB.clone().negate()); corner[0].scale.set(1, cs, 1);
     corner[1].position.copy(yy).addScaledVector(freeB, -cs); corner[1].quaternion.setFromUnitVectors(V(0, 1, 0), F.n); corner[1].scale.set(1, cs, 1);
-    corner.forEach(c => { c.visible = resOn > 0.01; });
-    cornerMat.opacity = 0.85 * resOn;
-    // free / blocked directions at y
-    const arr = ease(3.6, 4.5, tc);
-    placeArrow(free1, yy, freeA, 0.42 * arr + 1e-3);
-    placeArrow(free2, yy, freeB, 0.36 * arr + 1e-3);
-    placeArrow(blocked, yy, F.n, 0.45 * arr + 1e-3);
-    [free1, free2, blocked].forEach(a => setOpacity(a.userData.m, Math.min(arr * 1.5, 1) * out));
+    corner.forEach(c => { c.visible = cOn > 0.01; });
+    cornerMat.opacity = 0.85 * cOn;
+    // loss landscape on the face
+    const lossOn = ease(5.4, 6.3, tc) * out;
+    contourMat.opacity = 0.34 * lossOn; contours.visible = lossOn > 0.01;
+    setOpacity(ringMat, 0.9 * lossOn);
+    // -grad L at y, then its split: in-face part passes, normal part is blocked
+    const g = gradL(yy).multiplyScalar(-loss.GS), gT = projT(g), gNv = g.clone().sub(gT);
+    const gOn = ease(6.5, 7.1, tc), split = ease(7.4, 8.2, tc), cut = ease(8.6, 9.3, tc);
+    placeArrow(gArr, yy, g, g.length() * gOn + 1e-3);
+    setOpacity(gArr.userData.m, Math.min(gOn * 1.5, 1) * (1 - cut) * out);
+    placeArrow(passArr, yy, gT.lengthSq() > 1e-12 ? gT : F.t1, gT.length() * split + 1e-3);
+    setOpacity(passArr.userData.m, Math.min(split * 1.5, 1) * out * (1 - ease(13.2, 13.8, tc)));
+    placeArrow(blockArr, yy, F.n, gNv.length() * split * (1 - cut) + 1e-3);
+    setOpacity(blockArr.userData.m, Math.min(split * 1.5, 1) * (1 - cut) * out);
+    splitDash.list.forEach(d => { d.visible = false; });
+    const sdOn = split * (1 - cut) * out;
+    if (sdOn > 0.01) {
+      const tip = yy.clone().add(g), k = dashLine(splitDash, 0, yy.clone().add(gT), tip, 0.035, 0.03);
+      dashLine(splitDash, k, yy.clone().add(gNv), tip, 0.035, 0.03);
+    }
+    splitDash.m.opacity = 0.5 * sdOn;
+    // descent trail: older hops fade
+    trailSegs.forEach((sg, k) => {
+      const part = Math.min(Math.max(gs - k, 0), 1);
+      const age = gs - (k + 1);
+      const o = part > 0 ? 0.85 * Math.max(0.15, 1 - Math.max(age, 0) / 7) * out : 0;
+      sg.material.opacity = o; sg.visible = o > 0.003; trailDots[k].visible = o > 0.003 && k > 0;
+      if (sg.visible) sg.scale.set(1, sg.userData.L * ease(0, 1, part), 1);
+    });
 
-    // ---------- HTML labels, relaxed so they never overlap ----------
+    // ---------- HTML labels: at most four at a time, relaxed so they never overlap ----------
     const W = host.clientWidth, H = host.clientHeight;
     const want = [];
     function put(name, p3, show, dx, dy) {
@@ -400,22 +558,32 @@
       want.push({ name, el, show, x: (tmp.x * 0.5 + 0.5) * W + dx, y: (-tmp.y * 0.5 + 0.5) * H + dy,
         w: el.offsetWidth + 6, h: el.offsetHeight + 2 });
     }
-    put("f", fpt, appear * out, 0, -20);
-    put("y", yy, yOn, -18, 10);
-    put("face", faceLabelAt, faceOn, 0, 0);
-    put("free", yy.clone().addScaledVector(freeA, 0.56), Math.min(arr * 1.5, 1) * out, 0, 0);
-    // blocked label beside the normal arrow, on the side away from the free arrows
+    const descentOn = ease(9.2, 9.8, tc);
+    put("f", fpt, appear * out * Math.max(1 - ease(6.6, 7.1, tc), descentOn), 0, -20);
     {
-      const a2 = toScreen(yy, W, H), b2 = toScreen(yy.clone().addScaledVector(F.n, 0.3), W, H), c2 = toScreen(yy.clone().addScaledVector(freeB, 0.3), W, H);
+      // y's label sits to the left, across the gradient direction, clear of arrows and trail
+      const a2 = toScreen(yy, W, H), b2 = toScreen(yy.clone().add(gT.lengthSq() > 1e-10 ? gT.clone().setLength(0.2) : V()), W, H);
+      let ux = b2.x - a2.x, uy = b2.y - a2.y; const L = Math.hypot(ux, uy);
+      if (L > 3 && tc > 6.4) {
+        ux /= L; uy /= L;
+        let px = -uy, py = ux; if (px > 0) { px = -px; py = -py; }
+        put("y", yy, yOn, 20 * px, 20 * py);
+      } else put("y", yy, yOn, -18, 10);
+    }
+    put("face", faceLabelAt, faceOn * (1 - ease(6.0, 6.5, tc)), 0, 0);
+    put("grad", yy.clone().add(g.clone().multiplyScalar(gOn)).add(g.clone().setLength(0.12)), gOn * (1 - cut) * out, 0, 0);
+    put("pass", yy.clone().add(gT).add(gT.clone().setLength(0.13)), split * out * Math.min(1, Math.max(0, (gT.length() - 0.1) / 0.15)), 0, 4);
+    {
+      // blocked label beside the normal part, on the side away from the in-face arrow
+      const a2 = toScreen(yy, W, H), b2 = toScreen(yy.clone().addScaledVector(F.n, 0.2), W, H);
       let px = -(b2.y - a2.y), py = b2.x - a2.x; const L = Math.hypot(px, py) || 1; px /= L; py /= L;
       if (py > 0) { px = -px; py = -py; }
-      put("blocked", yy.clone().addScaledVector(F.n, 0.3), Math.min(arr * 1.5, 1) * out, 34 * px, 34 * py);
+      put("blocked", yy.clone().addScaledVector(F.n, Math.max(gNv.length(), 0.2) * 0.7), split * (1 - cut) * out, 30 * px, 30 * py);
     }
     {
-      // C(x) sits just outside the lowest-left vertex of the set as it appears on screen
       let best = null, bs = -1e9;
       for (const v of hullVerts) { const p = toScreen(v, W, H), sc = p.y - 0.6 * p.x; if (sc > bs) { bs = sc; best = v; } }
-      put("C", best, 1, -16, 10);
+      put("C", best, out * (1 - ease(1.2, 2.2, tc)), -16, 10);
     }
     const vis = want.filter(a => a.show > 0.05);
     for (let it = 0; it < 30; it++) {
@@ -427,12 +595,13 @@
           else { const s = (a.y < b.y ? -1 : 1) * oy / 2; a.y += s; b.y -= s; }
         }
       }
-      vis.forEach(a => { a.x = Math.min(Math.max(a.x, a.w / 2), W - a.w / 2); a.y = Math.min(Math.max(a.y, a.h / 2), H - a.h / 2); });
+      vis.forEach(a => { a.x = Math.min(Math.max(a.x, a.w / 2 + 2), W - a.w / 2 - 2); a.y = Math.min(Math.max(a.y, a.h / 2 + 2), H - a.h / 2 - 2); });
     }
     want.forEach(a => {
       a.el.style.transform = `translate(${a.x}px, ${a.y}px) translate(-50%, -50%)`;
       a.el.style.opacity = a.show;
     });
+    dbg.labelsShown = want.filter(a => a.show > 0.3).map(a => a.name);
   }
 
   // ---------- interaction: drag to rotate ----------
@@ -465,8 +634,9 @@
   let qStart = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.18, -0.35, 0)), qTarget = qStart.clone();
   const qBase = new THREE.Quaternion(), qUser = new THREE.Quaternion(), qSway = new THREE.Quaternion();
   world.position.x = -0.32;
+  const CAM_POS = camera.position.clone(), CAM_LOOK = V(0, -0.08, 0), camTarget = CAM_LOOK.clone();
   function frame(now) {
-    const T = FIXT !== null ? FIXT : prm ? 6.5 : Math.max(0, (now - t0) / 1000);
+    const T = FIXT !== null ? FIXT : prm ? 8.3 : Math.max(0, (now - t0) / 1000);
     const ci = Math.floor(T / CYCLE);
     if (ci !== cycleIdx) {
       // replay the turns of skipped cycles so a frozen ?t= frame matches the live animation
@@ -479,6 +649,21 @@
     qUser.setFromEuler(new THREE.Euler(pitchUser, yawUser, 0));
     world.quaternion.copy(qUser).multiply(qSway).multiply(qBase);
     world.updateMatrixWorld();
+    // dolly in on the tight face while the loss and its gradient are shown, back out at the end
+    const zoom = ease(1.2, 3.4, tc) * (1 - ease(13.2, 14.8, tc));
+    // the close-up looks at the face 40 degrees off its normal, so the outward (blocked) part
+    // never points straight at the viewer
+    const fc = F.c.clone().applyMatrix4(world.matrixWorld);
+    const nW = F.n.clone().transformDirection(world.matrixWorld);
+    // tilt within the plane spanned by n and (n x passed direction): the passed part then keeps its
+    // full length on screen and the blocked part appears at a right angle to it
+    const side = loss.side.clone().transformDirection(world.matrixWorld);
+    if (side.x > 0) side.negate();
+    const camDir = nW.clone().multiplyScalar(Math.cos(0.7)).addScaledVector(side, Math.sin(0.7)).normalize();
+    camTarget.copy(CAM_LOOK).lerp(fc.clone().addScaledVector(nW, 0.42), 0.9 * zoom);
+    camera.position.copy(CAM_POS).lerp(fc.clone().addScaledVector(camDir, 3.4), zoom);
+    camera.lookAt(camTarget);
+    camera.updateMatrixWorld();
     update(tc, T);
     renderer.render(scene, camera);
     if (!reduce) requestAnimationFrame(frame);
