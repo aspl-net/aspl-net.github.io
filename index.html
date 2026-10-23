@@ -50,14 +50,27 @@
     #hero3d canvas:active { cursor:grabbing; }
     #hero3d .hero-fallback { width:480px; height:280px; max-width:100%; margin:40px auto 0; }
     #hero3d.has-3d .hero-fallback { display:none; }
-    .h3d-label { position:absolute; left:0; top:0; opacity:0; pointer-events:none; white-space:nowrap; font-size:13px; font-weight:700; transition:opacity 0.2s; }
+    .h3d-label { position:absolute; left:0; top:0; z-index:2; opacity:0; pointer-events:none; white-space:nowrap; font-size:13px; font-weight:700; transition:opacity 0.2s;
+      text-shadow:0 0 3px rgba(255,255,255,0.95), 0 0 6px rgba(255,255,255,0.8); }
     #hero3d:not(.has-3d) .h3d-label { display:none; }
-    .lab-f { color:#1e3a8a; font-family:Georgia, serif; font-style:italic; font-size:15px; }
-    .lab-y { color:#9a3412; font-family:Georgia, serif; font-style:italic; font-size:16px; }
-    .lab-face, .lab-blocked { color:#c2410c; }
+    .lab-f { color:#1e3a8a; }
+    .lab-y { color:#9a3412; }
+    .lab-face { color:#c2410c; }
+    .lab-blocked { color:#64748b; }
     .lab-pass { color:#1d4ed8; }
-    .lab-grad { color:#1e3a8a; }
-    .lab-C { color:#1e3a8a; font-family:Georgia, serif; font-style:italic; font-size:17px; font-weight:500; }
+    .lab-grad { color:#334155; }
+    .lab-best { color:#1e3a8a; }
+    .lab-C { color:#1e3a8a; font-size:15px; font-weight:700; letter-spacing:0.2px; }
+    .h3d-steps { display:none; max-width:640px; margin:-6px auto 18px; min-height:52px; }
+    #hero3d.has-3d + .h3d-steps { display:block; }
+    .h3d-dots { display:flex; justify-content:center; gap:7px; margin-bottom:7px; }
+    .h3d-dots i { width:7px; height:7px; border-radius:50%; background:#cbd5e1; transition:background 0.3s, transform 0.3s; }
+    .h3d-dots i.on { background:#2563eb; transform:scale(1.25); }
+    .h3d-dots i.done { background:#93c5fd; }
+    .h3d-step-text { font-size:0.98rem; font-weight:500; color:#1e293b; transition:opacity 0.35s; }
+    .h3d-step-text b { color:#2563eb; font-weight:700; margin-right:6px; }
+    .h3d-steps.all .h3d-dots { display:none; }
+    .h3d-steps.all ol { text-align:left; display:inline-block; margin:0; padding-left:1.4em; font-size:0.92rem; color:#1e293b; line-height:1.6; }
     @keyframes logoFadeIn { from { opacity:0; transform: scale(0.9) translateY(10px); } to { opacity:1; transform: scale(1) translateY(0); } }
     @keyframes fadeUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
 
@@ -142,7 +155,8 @@
       .proj-wrap { width:100%; max-width:480px; height:auto; aspect-ratio:420/280; }
       #hero3d { width:100%; height:auto; aspect-ratio:16/9; max-width:640px; }
       .h3d-label { font-size:11px; }
-      .lab-f { font-size:13px; } .lab-y { font-size:14px; } .lab-C { font-size:14px; }
+      .h3d-steps { margin-top:-2px; min-height:64px; padding:0 8px; }
+      .h3d-step-text { font-size:0.9rem; }
       .duo-grid, .app-grid { grid-template-columns:1fr; }
       .bt-chart { min-height:240px; }
       .abstract { text-align:left; }
@@ -152,19 +166,20 @@
 <body>
 <header class="hero">
   <div class="hero-content">
-    <div class="proj-wrap" id="hero3d" aria-label="A prediction f(x) is projected onto the feasible set C(x) and lands on the tight face at y. The loss gradient at y splits: its in-face part passes through the layer and its outward part is blocked, so training moves y down the loss along the face.">
-      <span class="h3d-label lab-f" data-label="f">f(x)</span>
-      <span class="h3d-label lab-y" data-label="y">y</span>
-      <span class="h3d-label lab-face" data-label="face">tight face</span>
-      <span class="h3d-label lab-grad" data-label="grad">&minus;&nabla;loss</span>
-      <span class="h3d-label lab-pass" data-label="pass">passes</span>
-      <span class="h3d-label lab-blocked" data-label="blocked">blocked</span>
-      <span class="h3d-label lab-C" data-label="C">𝒞(x)</span>
+    <div class="proj-wrap" id="hero3d" aria-label="The network makes a guess outside the allowed region. ASPL moves it to the nearest allowed point, on the wall it touches. Training then pushes this output; ASPL keeps only the part of the push that runs along the wall and removes the part that would leave the region, so the output slides along the wall to a better answer while staying allowed.">
+      <span class="h3d-label lab-f" data-label="f">network's guess</span>
+      <span class="h3d-label lab-y" data-label="y">output</span>
+      <span class="h3d-label lab-face" data-label="face">wall it touches</span>
+      <span class="h3d-label lab-grad" data-label="grad">training push</span>
+      <span class="h3d-label lab-pass" data-label="pass">kept</span>
+      <span class="h3d-label lab-blocked" data-label="blocked">removed</span>
+      <span class="h3d-label lab-C" data-label="C">allowed region</span>
+      <span class="h3d-label lab-best" data-label="best">best point</span>
       <div class="hero-fallback">
       <!--
-        Hero animation: a backbone prediction f(x) outside the feasible set C(x)
-        is projected by solver iterates onto the tight face (orange); the tight
-        set is fixed inside the rho-ball, then training moves y along the face.
+        Static fallback without WebGL: the network's guess outside the allowed
+        region is moved to the nearest allowed point on the wall it touches,
+        then training slides that output along the wall.
       -->
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 280" width="100%" height="100%">
         <defs>
@@ -188,13 +203,13 @@
         <polygon points="110,220 70,130 150,55 270,80 300,190" fill="url(#polyFill)" stroke="#1E3A8A" stroke-width="2" stroke-linejoin="round" opacity="0">
           <animate attributeName="opacity" to="0.95" dur="0.5s" begin="0.2s" fill="freeze"/>
         </polygon>
-        <text x="150" y="150" fill="#1E3A8A" font-size="20" font-style="italic" font-family="Georgia, serif" opacity="0">𝒞(x)<animate attributeName="opacity" to="0.85" dur="0.4s" begin="0.4s" fill="freeze"/></text>
+        <text x="150" y="150" text-anchor="middle" fill="#1E3A8A" font-size="14" font-weight="700" font-family="DM Sans, sans-serif" opacity="0">allowed region<animate attributeName="opacity" to="0.85" dur="0.4s" begin="0.4s" fill="freeze"/></text>
 
         <!-- backbone prediction f(x) -->
         <g filter="url(#nG)" opacity="0"><animate attributeName="opacity" to="1" dur="0.3s" begin="0.8s" fill="freeze"/>
           <circle cx="380" cy="110" r="8" fill="url(#ptBlue)"/>
         </g>
-        <text x="372" y="92" fill="#1E3A8A" font-size="14" font-style="italic" font-family="Georgia, serif" opacity="0">f(x)<animate attributeName="opacity" to="1" dur="0.3s" begin="0.8s" fill="freeze"/></text>
+        <text x="368" y="92" text-anchor="middle" fill="#1E3A8A" font-size="12" font-weight="700" font-family="DM Sans, sans-serif" opacity="0">network's guess<animate attributeName="opacity" to="1" dur="0.3s" begin="0.8s" fill="freeze"/></text>
 
         <!-- solver iterates converging to the tight face -->
         <path d="M380,110 L332,152 L318,116 L299,146 L292,128 L285.2,135.8" fill="none" stroke="#60A5FA" stroke-width="2" stroke-dasharray="230" stroke-dashoffset="230" stroke-linejoin="round" opacity="0.9">
@@ -216,7 +231,7 @@
         <line x1="270" y1="80" x2="300" y2="190" stroke="#EA580C" stroke-width="5" stroke-linecap="round" opacity="0" filter="url(#fG)">
           <animate attributeName="opacity" to="1" dur="0.4s" begin="2.2s" fill="freeze"/>
         </line>
-        <text x="306" y="200" fill="#C2410C" font-size="12.5" font-weight="700" font-family="DM Sans, sans-serif" opacity="0">tight face<animate attributeName="opacity" to="1" dur="0.4s" begin="2.4s" fill="freeze"/></text>
+        <text x="306" y="200" fill="#C2410C" font-size="12.5" font-weight="700" font-family="DM Sans, sans-serif" opacity="0">wall it touches<animate attributeName="opacity" to="1" dur="0.4s" begin="2.4s" fill="freeze"/></text>
 
         <!-- projected point y, then training slides it along the face -->
         <g opacity="0"><animate attributeName="opacity" to="1" dur="0.3s" begin="2.5s" fill="freeze"/>
@@ -229,7 +244,7 @@
             <animate attributeName="cy" values="135.8;113.3;135.8;158.3;135.8" dur="4s" begin="3.4s" repeatCount="indefinite"/>
           </circle>
         </g>
-        <text x="252" y="141" fill="#9A3412" font-size="15" font-weight="700" font-style="italic" font-family="Georgia, serif" opacity="0">y<animate attributeName="opacity" to="1" dur="0.3s" begin="2.6s" fill="freeze"/></text>
+        <text x="252" y="141" text-anchor="end" fill="#9A3412" font-size="12.5" font-weight="700" font-family="DM Sans, sans-serif" opacity="0">output<animate attributeName="opacity" to="1" dur="0.3s" begin="2.6s" fill="freeze"/></text>
 
         <!-- face-direction arrows (training moves along the face) -->
         <g opacity="0"><animate attributeName="opacity" to="0.9" dur="0.4s" begin="3.2s" fill="freeze"/>
@@ -242,10 +257,14 @@
           <path d="M282,128 C250,40 140,20 60,48" fill="none" stroke="#EA580C" stroke-width="1.8" stroke-dasharray="6 5" marker-end="url(#arr)">
             <animate attributeName="stroke-dashoffset" values="0;-22" dur="1.2s" begin="3.0s" repeatCount="indefinite"/>
           </path>
-          <text x="22" y="32" fill="#C2410C" font-size="11.5" font-weight="600" font-family="DM Sans, sans-serif">backward: one d&#8345;&#215;d&#8345; solve</text>
+          <text x="22" y="32" fill="#C2410C" font-size="11.5" font-weight="600" font-family="DM Sans, sans-serif">only the push along the wall is kept</text>
         </g>
       </svg>
       </div>
+    </div>
+    <div class="h3d-steps" id="hero3d-steps" aria-hidden="true">
+      <div class="h3d-dots"><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="h3d-step-text"></div>
     </div>
     <h1>ASPL</h1>
     <p class="lead">

@@ -183,8 +183,6 @@
     return record ? path : x;
   }
 
-  const hullVerts = [];
-  faces.forEach(G => G.verts.forEach(v => { if (!hullVerts.some(w => w.distanceTo(v) < 1e-5)) hullVerts.push(v); }));
 
   // ---------- helpers ----------
   const fadeMats = [];
@@ -226,7 +224,7 @@
   const faceMat = new THREE.MeshBasicMaterial({ color: 0xfdba74, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false });
   const edgeMat = mat(ORANGE, { emissive: 0xc2410c, emissiveIntensity: 0.55 });
   let faceMesh = null, faceEdges = null;
-  const fSphere = new THREE.Mesh(new THREE.SphereGeometry(0.075, 24, 16), mat(BLUE, { emissive: 0x1d4ed8, emissiveIntensity: 0.35 }));
+  const fSphere = new THREE.Mesh(new THREE.SphereGeometry(0.075, 24, 16), mat(NAVY, { emissive: 0x1e3a8a, emissiveIntensity: 0.3 }));
   const ySphere = new THREE.Mesh(new THREE.SphereGeometry(0.07, 24, 16), mat(ORANGE, { emissive: 0xea580c, emissiveIntensity: 0.45 }));
   const glow = new THREE.Mesh(new THREE.SphereGeometry(0.16, 24, 16), new THREE.MeshBasicMaterial({ color: ORANGE, transparent: true, opacity: 0, depthWrite: false }));
   world.add(fSphere, ySphere, glow);
@@ -272,14 +270,17 @@
   const ringDot = new THREE.Mesh(new THREE.SphereGeometry(0.02, 12, 8), ringMat);
   ring.renderOrder = ringDot.renderOrder = 4; world.add(ring, ringDot);
   // descent direction -grad L at y and its split into the passed (in-face) and blocked (normal) parts
-  const gArr = arrow(NAVY), passArr = arrow(BLUE), blockArr = arrow(ORANGE);
+  const SLATE = 0x334155, GREY = 0x94a3b8;
+  const gArr = arrow(SLATE), passArr = arrow(BLUE), blockArr = arrow(0x64748b);
+  const blockCol0 = new THREE.Color(0x64748b), blockCol1 = new THREE.Color(0xcbd5e1);
   // gradient-descent trail on the face, older steps fade
   const NGD = 14;
   const trailSegs = [], trailDots = [];
+  const trailGeo = new THREE.CylinderGeometry(0.017, 0.017, 1, 8); trailGeo.translate(0, 0.5, 0);
   for (let k = 0; k < NGD; k++) {
-    const m = new THREE.MeshBasicMaterial({ color: ORANGE, transparent: true, opacity: 0, depthWrite: false });
-    const sg = new THREE.Mesh(segGeo, m); sg.renderOrder = 4; trailSegs.push(sg); world.add(sg);
-    const d = new THREE.Mesh(new THREE.SphereGeometry(0.02, 12, 8), m); d.renderOrder = 4; trailDots.push(d); world.add(d);
+    const m = new THREE.MeshBasicMaterial({ color: 0xc2410c, transparent: true, opacity: 0, depthWrite: false });
+    const sg = new THREE.Mesh(trailGeo, m); sg.renderOrder = 4; trailSegs.push(sg); world.add(sg);
+    const d = new THREE.Mesh(new THREE.SphereGeometry(0.026, 12, 8), m); d.renderOrder = 4; trailDots.push(d); world.add(d);
   }
 
   // loss L(y) = 1/2 (y - t)^T A (y - t), A = A1 u u^T + A2 w w^T + A3 n n^T, t = ys + tn n.
@@ -384,7 +385,7 @@
       const w = V().crossVectors(F.n, u).normalize();
       loss = { ys, u, w, t: ys.clone() };
       const gT = projT(gradL(y0)).length();
-      loss.t = ys.clone().addScaledVector(F.n, 0.9 * gT / A3);
+      loss.t = ys.clone().addScaledVector(F.n, 1.1 * gT / A3);
       const P = gdPath();
       const minM = Math.min(...P.map(p => insideMargin(F, p)));
       const chord = V().subVectors(P[NGD], y0), cl = chord.length();
@@ -458,8 +459,32 @@
     return q;
   }
 
-  // ---------- timeline (seconds within a cycle) ----------
-  const CYCLE = 15.0;
+  // ---------- timeline (seconds within a cycle): five narrated steps ----------
+  const CYCLE = 18.0;
+  const STEPS = [
+    [0.0, 3.4, "The network makes a guess, outside the allowed region."],
+    [3.4, 6.6, "ASPL searches, step by step, for the nearest allowed point."],
+    [6.6, 9.8, "Training pushes the output, partly out of the allowed region."],
+    [9.8, 13.2, "ASPL keeps the part along the wall and removes the part that leaves the region."],
+    [13.2, CYCLE, "The output slides along the wall to a better answer, and stays allowed."],
+  ];
+  const stepsEl = document.getElementById("hero3d-steps");
+  const stepText = stepsEl && stepsEl.querySelector(".h3d-step-text");
+  const stepDots = stepsEl ? [...stepsEl.querySelectorAll(".h3d-dots i")] : [];
+  let shownStep = -1;
+  function narrate(tc) {
+    if (!stepText || stepsEl.classList.contains("all")) return;
+    let k = STEPS.findIndex(s => tc >= s[0] && tc < s[1]);
+    if (k < 0) k = STEPS.length - 1;
+    if (k !== shownStep) {
+      shownStep = k;
+      stepText.innerHTML = `<b>${k + 1}</b>${STEPS[k][2]}`;
+      stepDots.forEach((d, i) => { d.className = i === k ? "on" : i < k ? "done" : ""; });
+    }
+    const [a, b] = STEPS[k];
+    stepText.style.opacity = Math.min(1, (tc - a) / 0.35, (b - tc) / 0.3, 1);
+    dbg.step = k + 1;
+  }
   const ease = (a, b, t) => { const u = Math.min(Math.max((t - a) / (b - a), 0), 1); return u * u * (3 - 2 * u); };
   const lin = (a, b, t) => Math.min(Math.max((t - a) / (b - a), 0), 1);
   function setOpacity(m, o) { m.opacity = o; m.visible = o > 0.003; }
@@ -471,66 +496,67 @@
   function yAt(tc) {
     // y follows the gradient-descent iterates, one eased hop per step; a hop's duration
     // grows with its length, so long early hops do not flash past and late ones settle
-    const u = lin(9.4, 13.2, tc) * loss.cumT[NGD];
+    const u = lin(13.4, 16.6, tc) * loss.cumT[NGD];
     let k = 0; while (k < NGD - 1 && loss.cumT[k + 1] <= u) k++;
     const fr = Math.min((u - loss.cumT[k]) / (loss.cumT[k + 1] - loss.cumT[k]), 1);
     return { y: loss.P[k].clone().lerp(loss.P[k + 1], ease(0, 1, fr)), s: k + fr };
   }
 
   function update(tc, T) {
-    const appear = ease(0.8, 1.3, tc), out = 1 - ease(13.9, 14.7, tc);
+    narrate(tc);
+    const appear = ease(0.6, 1.1, tc), out = 1 - ease(17.3, 17.9, tc);
     const { y: yy, s: gs } = yAt(tc);
     const fpt = yy.clone().addScaledVector(F.n, h);
     fSphere.position.copy(fpt);
-    setOpacity(fSphere.material, appear * out);
-    // solver iterates
-    const u = lin(1.4, 4.2, tc);
+    // the guess stays in view but steps back once the output is the subject
+    const guessBack = (1 - 0.55 * ease(6.6, 7.4, tc)) * (1 - ease(13.2, 13.9, tc));
+    setOpacity(fSphere.material, appear * out * guessBack);
+    // step 2: solver iterates
+    const u = lin(3.7, 5.6, tc);
     const drawK = (1 - Math.pow(1 - u, 1.35)) * (its.length - 1);
     segs.forEach((sg, k) => {
       const part = Math.min(Math.max(drawK - k, 0), 1);
       sg.visible = sg.userData.on && part > 0;
       if (sg.visible) sg.scale.set(1, sg.userData.L * part, 1);
     });
-    dots.forEach((d, k) => { d.visible = d.userData.on && drawK >= k + 1; });
-    const fadeIt = out * (1 - ease(5.4, 6.4, tc));
+    dots.forEach(d => { d.visible = false; });
+    const fadeIt = out * (1 - ease(5.9, 6.6, tc));
     setOpacity(itMat, 0.9 * fadeIt); setOpacity(dotMat, fadeIt);
     { const k = Math.min(Math.floor(drawK), its.length - 2), fr = drawK - k;
       bead.position.copy(its[k]).lerp(its[k + 1], Math.min(fr, 1));
       setOpacity(bead.material, u > 0 && u < 1 ? 0.95 * out : 0); }
-    // tight face and y
-    const faceOn = ease(3.9, 4.5, tc) * out;
-    faceMat.opacity = (0.62 + 0.28 * ease(5.2, 6.2, tc)) * faceOn;
-    // once the solver path has gone, the face hides the seams behind it so the loss map reads cleanly
-    faceMat.depthWrite = tc > 6.3 && tc < 13.9;
+    // the wall it touches, and the output on it
+    const faceOn = ease(5.2, 5.7, tc) * out;
+    faceMat.opacity = (0.62 + 0.28 * ease(6.8, 7.6, tc)) * faceOn;
+    faceMat.depthWrite = tc > 7.6 && tc < 17.3;
     setOpacity(edgeMat, faceOn);
     ySphere.position.copy(yy);
     glow.position.copy(yy);
-    const yOn = ease(4.2, 4.6, tc) * out;
+    const yOn = ease(5.5, 5.9, tc) * out;
     setOpacity(ySphere.material, yOn);
     glow.material.opacity = 0.22 * yOn * (0.75 + 0.25 * Math.sin(T * 4));
     glow.visible = yOn > 0;
-    // residual f - y along the outward normal, right-angle mark while it is introduced
-    const resOn = ease(4.7, 5.4, tc) * out;
+    // straight, shortest line from the guess to the output (along the wall's normal)
+    const resOn = ease(5.8, 6.3, tc) * out * (1 - 0.45 * ease(6.6, 7.4, tc)) * (1 - ease(13.2, 13.9, tc));
     resDash.list.forEach(d => { d.visible = false; });
     if (resOn > 0.01) dashLine(resDash, 0, yy.clone().addScaledVector(F.n, 0.06), fpt.clone().addScaledVector(F.n, -0.07), 0.045, 0.035);
     resDash.m.opacity = 0.55 * resOn;
-    const cs = 0.12, cOn = resOn * (1 - ease(6.2, 6.8, tc));
-    corner[0].position.copy(yy).addScaledVector(F.n, cs); corner[0].quaternion.setFromUnitVectors(V(0, 1, 0), freeB.clone().negate()); corner[0].scale.set(1, cs, 1);
-    corner[1].position.copy(yy).addScaledVector(freeB, -cs); corner[1].quaternion.setFromUnitVectors(V(0, 1, 0), F.n); corner[1].scale.set(1, cs, 1);
-    corner.forEach(c => { c.visible = cOn > 0.01; });
-    cornerMat.opacity = 0.85 * cOn;
-    // loss landscape on the face
-    const lossOn = ease(5.4, 6.3, tc) * out;
+    corner.forEach(c => { c.visible = false; });
+    // step 3: score rings on the wall around the best point
+    const lossOn = ease(6.8, 7.5, tc) * out;
     contourMat.opacity = 0.34 * lossOn; contours.visible = lossOn > 0.01;
     setOpacity(ringMat, 0.9 * lossOn);
-    // -grad L at y, then its split: in-face part passes, normal part is blocked
+    { const k = lin(16.4, 17.2, tc), bump = k > 0 && k < 1 ? Math.sin(Math.PI * k) : 0; ring.scale.setScalar(1 + 0.9 * bump); }
+    // the training push at the output, then (step 4) its split into kept and removed parts
     const g = gradL(yy).multiplyScalar(-loss.GS), gT = projT(g), gNv = g.clone().sub(gT);
-    const gOn = ease(6.5, 7.1, tc), split = ease(7.4, 8.2, tc), cut = ease(8.6, 9.3, tc);
+    const gOn = ease(7.7, 8.3, tc), split = ease(10.0, 10.8, tc), cut = ease(12.0, 12.8, tc);
     placeArrow(gArr, yy, g, g.length() * gOn + 1e-3);
-    setOpacity(gArr.userData.m, Math.min(gOn * 1.5, 1) * (1 - cut) * out);
+    setOpacity(gArr.userData.m, Math.min(gOn * 1.5, 1) * (1 - 0.9 * split) * (1 - cut) * out);
     placeArrow(passArr, yy, gT.lengthSq() > 1e-12 ? gT : F.t1, gT.length() * split + 1e-3);
-    setOpacity(passArr.userData.m, Math.min(split * 1.5, 1) * out * (1 - ease(13.2, 13.8, tc)));
+    passArr.userData.m.emissiveIntensity = 0.4 + 0.6 * split * (1 - ease(13.2, 13.8, tc)) * (0.5 + 0.5 * Math.sin(T * 5));
+    setOpacity(passArr.userData.m, Math.min(split * 1.5, 1) * out * (1 - ease(16.6, 17.2, tc)));
     placeArrow(blockArr, yy, F.n, gNv.length() * split * (1 - cut) + 1e-3);
+    blockArr.userData.m.color.copy(blockCol0).lerp(blockCol1, ease(11.1, 11.9, tc));
     setOpacity(blockArr.userData.m, Math.min(split * 1.5, 1) * (1 - cut) * out);
     splitDash.list.forEach(d => { d.visible = false; });
     const sdOn = split * (1 - cut) * out;
@@ -538,12 +564,12 @@
       const tip = yy.clone().add(g), k = dashLine(splitDash, 0, yy.clone().add(gT), tip, 0.035, 0.03);
       dashLine(splitDash, k, yy.clone().add(gNv), tip, 0.035, 0.03);
     }
-    splitDash.m.opacity = 0.5 * sdOn;
-    // descent trail: older hops fade
+    splitDash.m.opacity = 0.4 * sdOn;
+    // step 5: descent trail, older hops fade
     trailSegs.forEach((sg, k) => {
       const part = Math.min(Math.max(gs - k, 0), 1);
       const age = gs - (k + 1);
-      const o = part > 0 ? 0.85 * Math.max(0.15, 1 - Math.max(age, 0) / 7) * out : 0;
+      const o = part > 0 ? 0.9 * Math.max(0.35, 1 - Math.max(age, 0) / 9) * out : 0;
       sg.material.opacity = o; sg.visible = o > 0.003; trailDots[k].visible = o > 0.003 && k > 0;
       if (sg.visible) sg.scale.set(1, sg.userData.L * ease(0, 1, part), 1);
     });
@@ -558,33 +584,29 @@
       want.push({ name, el, show, x: (tmp.x * 0.5 + 0.5) * W + dx, y: (-tmp.y * 0.5 + 0.5) * H + dy,
         w: el.offsetWidth + 6, h: el.offsetHeight + 2 });
     }
-    const descentOn = ease(9.2, 9.8, tc);
-    put("f", fpt, appear * out * Math.max(1 - ease(6.6, 7.1, tc), descentOn), 0, -20);
+    put("f", fpt, appear * out * (1 - ease(6.4, 6.9, tc)), 0, -20);
+    { const t = tc < 6.6 ? "nearest allowed point" : "output"; if (labels.y && labels.y.textContent !== t) labels.y.textContent = t; }
     {
-      // y's label sits to the left, across the gradient direction, clear of arrows and trail
+      // the output's label sits across the push direction, clear of arrows and trail
       const a2 = toScreen(yy, W, H), b2 = toScreen(yy.clone().add(gT.lengthSq() > 1e-10 ? gT.clone().setLength(0.2) : V()), W, H);
       let ux = b2.x - a2.x, uy = b2.y - a2.y; const L = Math.hypot(ux, uy);
-      if (L > 3 && tc > 6.4) {
+      if (L > 3 && tc > 7.6) {
         ux /= L; uy /= L;
         let px = -uy, py = ux; if (px > 0) { px = -px; py = -py; }
-        put("y", yy, yOn, 20 * px, 20 * py);
-      } else put("y", yy, yOn, -18, 10);
+        put("y", yy, yOn, 30 * px, 22 * py);
+      } else put("y", yy, yOn, -(labels.y.offsetWidth / 2 + 14), 14);
     }
-    put("face", faceLabelAt, faceOn * (1 - ease(6.0, 6.5, tc)), 0, 0);
-    put("grad", yy.clone().add(g.clone().multiplyScalar(gOn)).add(g.clone().setLength(0.12)), gOn * (1 - cut) * out, 0, 0);
-    put("pass", yy.clone().add(gT).add(gT.clone().setLength(0.13)), split * out * Math.min(1, Math.max(0, (gT.length() - 0.1) / 0.15)), 0, 4);
+    put("face", faceLabelAt, faceOn * (1 - ease(7.6, 8.1, tc)), 0, 0);
+    put("best", loss.ys, lossOn * Math.max(1 - ease(9.6, 10.0, tc), ease(13.6, 14.1, tc) * (1 - ease(16.0, 16.4, tc))), 0, 16);
+    put("grad", yy.clone().add(g.clone().multiplyScalar(gOn)).add(g.clone().setLength(0.12)), gOn * (1 - ease(9.9, 10.3, tc)) * out, 0, 0);
+    put("pass", yy.clone().add(gT).add(gT.clone().setLength(0.13)), split * out * (1 - ease(13.4, 13.9, tc)) * Math.min(1, Math.max(0, (gT.length() - 0.1) / 0.15)), 0, 4);
     {
-      // blocked label beside the normal part, on the side away from the in-face arrow
       const a2 = toScreen(yy, W, H), b2 = toScreen(yy.clone().addScaledVector(F.n, 0.2), W, H);
       let px = -(b2.y - a2.y), py = b2.x - a2.x; const L = Math.hypot(px, py) || 1; px /= L; py /= L;
       if (py > 0) { px = -px; py = -py; }
-      put("blocked", yy.clone().addScaledVector(F.n, Math.max(gNv.length(), 0.2) * 0.7), split * (1 - cut) * out, 30 * px, 30 * py);
+      put("blocked", yy.clone().addScaledVector(F.n, Math.max(gNv.length(), 0.2) * 0.7), split * (1 - ease(12.2, 12.7, tc)) * out, 34 * px, 30 * py);
     }
-    {
-      let best = null, bs = -1e9;
-      for (const v of hullVerts) { const p = toScreen(v, W, H), sc = p.y - 0.6 * p.x; if (sc > bs) { bs = sc; best = v; } }
-      put("C", best, out * (1 - ease(1.2, 2.2, tc)), -16, 10);
-    }
+    put("C", V(0, -0.15, 0), appear * out * (1 - ease(3.0, 3.5, tc)), 0, 0);
     const vis = want.filter(a => a.show > 0.05);
     for (let it = 0; it < 30; it++) {
       for (let i = 0; i < vis.length; i++) for (let j = i + 1; j < vis.length; j++) {
@@ -629,6 +651,10 @@
 
   const prm = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   const reduce = FIXT !== null || prm;
+  if (prm && stepsEl) {
+    stepsEl.classList.add("all");
+    stepsEl.querySelector(".h3d-step-text").innerHTML = "<ol>" + STEPS.map(s => `<li>${s[2]}</li>`).join("") + "</ol>";
+  }
   const t0 = performance.now();
   let cycleIdx = null;
   let qStart = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.18, -0.35, 0)), qTarget = qStart.clone();
@@ -636,7 +662,7 @@
   world.position.x = -0.32;
   const CAM_POS = camera.position.clone(), CAM_LOOK = V(0, -0.08, 0), camTarget = CAM_LOOK.clone();
   function frame(now) {
-    const T = FIXT !== null ? FIXT : prm ? 8.3 : Math.max(0, (now - t0) / 1000);
+    const T = FIXT !== null ? FIXT : prm ? 10.9 : Math.max(0, (now - t0) / 1000);
     const ci = Math.floor(T / CYCLE);
     if (ci !== cycleIdx) {
       // replay the turns of skipped cycles so a frozen ?t= frame matches the live animation
@@ -650,7 +676,7 @@
     world.quaternion.copy(qUser).multiply(qSway).multiply(qBase);
     world.updateMatrixWorld();
     // dolly in on the tight face while the loss and its gradient are shown, back out at the end
-    const zoom = ease(1.2, 3.4, tc) * (1 - ease(13.2, 14.8, tc));
+    const zoom = ease(3.6, 6.2, tc) * (1 - ease(16.6, 17.9, tc));
     // the close-up looks at the face 40 degrees off its normal, so the outward (blocked) part
     // never points straight at the viewer
     const fc = F.c.clone().applyMatrix4(world.matrixWorld);
@@ -659,7 +685,7 @@
     // full length on screen and the blocked part appears at a right angle to it
     const side = loss.side.clone().transformDirection(world.matrixWorld);
     if (side.x > 0) side.negate();
-    const camDir = nW.clone().multiplyScalar(Math.cos(0.7)).addScaledVector(side, Math.sin(0.7)).normalize();
+    const camDir = nW.clone().multiplyScalar(Math.cos(0.92)).addScaledVector(side, Math.sin(0.92)).normalize();
     camTarget.copy(CAM_LOOK).lerp(fc.clone().addScaledVector(nW, 0.42), 0.9 * zoom);
     camera.position.copy(CAM_POS).lerp(fc.clone().addScaledVector(camDir, 3.4), zoom);
     camera.lookAt(camTarget);
