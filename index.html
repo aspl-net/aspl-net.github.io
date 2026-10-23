@@ -44,7 +44,11 @@
       animation: logoFadeIn 1s ease-out;
     }
     #hero3d { position:relative; width:640px; height:360px; max-width:100%; }
-    #hero3d canvas { display:block; cursor:grab; }
+    #hero3d canvas { display:block; cursor:grab;
+      -webkit-mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent), linear-gradient(to bottom, transparent, #000 8%, #000 78%, transparent);
+      -webkit-mask-composite: source-in;
+      mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent), linear-gradient(to bottom, transparent, #000 8%, #000 78%, transparent);
+      mask-composite: intersect; }
     #hero3d canvas:active { cursor:grabbing; }
     #hero3d .hero-fallback { width:480px; height:280px; max-width:100%; margin:40px auto 0; }
     #hero3d.has-3d .hero-fallback { display:none; }
