@@ -50,17 +50,18 @@
     #hero3d canvas:active { cursor:grabbing; }
     #hero3d .hero-fallback { width:480px; height:280px; max-width:100%; margin:40px auto 0; }
     #hero3d.has-3d .hero-fallback { display:none; }
-    .h3d-label { position:absolute; left:0; top:0; z-index:2; opacity:0; pointer-events:none; white-space:nowrap; font-size:13px; font-weight:700; transition:opacity 0.2s;
-      text-shadow:0 0 3px rgba(255,255,255,0.95), 0 0 6px rgba(255,255,255,0.8); }
+    .h3d-label { position:absolute; left:0; top:0; z-index:2; opacity:0; pointer-events:none; white-space:nowrap; font-size:13px; font-weight:700; line-height:1.35; transition:opacity 0.2s;
+      padding:1px 7px; border-radius:7px; background:rgba(255,255,255,0.8); box-shadow:0 1px 3px rgba(15,23,42,0.10); }
     #hero3d:not(.has-3d) .h3d-label { display:none; }
     .lab-f { color:#1e3a8a; }
     .lab-y { color:#9a3412; }
-    .lab-face { color:#c2410c; }
-    .lab-blocked { color:#64748b; }
+    .lab-y.long { white-space:normal; width:118px; text-align:center; line-height:1.2; padding:2px 6px; }
+    .lab-face { color:#9a3412; }
+    .lab-blocked { color:#475569; }
     .lab-pass { color:#1d4ed8; }
     .lab-grad { color:#334155; }
     .lab-best { color:#1e3a8a; }
-    .lab-C { color:#1e3a8a; font-size:15px; font-weight:700; letter-spacing:0.2px; }
+    .lab-C { color:#1e3a8a; font-size:15px; font-weight:700; letter-spacing:0.2px; background:rgba(255,255,255,0.62); }
     .h3d-steps { display:none; max-width:640px; margin:-6px auto 18px; min-height:52px; }
     #hero3d.has-3d + .h3d-steps { display:block; }
     .h3d-dots { display:flex; justify-content:center; gap:7px; margin-bottom:7px; }
@@ -155,8 +156,9 @@
       .lead { font-size:0.98rem; }
       .lead span { display:inline; }
       .proj-wrap { width:100%; max-width:480px; height:auto; aspect-ratio:420/280; }
-      #hero3d { width:100%; height:auto; aspect-ratio:16/9; max-width:640px; }
+      #hero3d { width:100%; height:auto; aspect-ratio:4/3; max-width:640px; }
       .h3d-label { font-size:11px; }
+      .lab-f { white-space:normal; width:106px; text-align:center; line-height:1.2; padding:2px 6px; }
       .h3d-steps { margin-top:-2px; min-height:64px; padding:0 8px; }
       .h3d-step-text { font-size:0.9rem; }
       .duo-grid, .app-grid { grid-template-columns:1fr; }
