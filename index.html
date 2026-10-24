@@ -59,6 +59,7 @@
     .lab-face { color:#9a3412; }
     .lab-blocked { color:#b91c1c; }
     .lab-pass { color:#1d4ed8; font-weight:800; }
+    .lab-around { color:#b45309; font-weight:800; }
     .lab-grad { color:#334155; }
     .lab-best { color:#1e3a8a; }
     .lab-C { color:#1e3a8a; font-size:15px; font-weight:700; letter-spacing:0.2px; background:rgba(255,255,255,0.62); }
@@ -182,13 +183,14 @@
 <header class="hero">
   <div class="hero-content">
     <h1>ASPL</h1>
-    <div class="proj-wrap" id="hero3d" role="img" aria-label="An animation in five steps. 1: The neural network makes an estimate, outside the allowed region. 2: A standard solver moves it to the nearest allowed point, the output, and ASPL notes which wall of the region it lands on. 3: Training pushes the output toward the best allowed answer, partly across that wall. 4: ASPL keeps the part of the push along the wall and removes the part across it, with one small exact solve. 5: The output slides along the wall toward the best allowed answer, and the network&#39;s estimate moves with it.">
+    <div class="proj-wrap" id="hero3d" role="img" aria-label="An animation in five steps. The allowed region is a glass barrel with a curved wall. 1: The neural network makes an estimate, outside the allowed region. 2: A solver finds the nearest allowed point, the output, on the curved wall; ASPL reads which walls it touches. 3: Training pushes the output toward the best allowed answer, marked by a ring. 4: ASPL splits the push three ways: the straight part along the wall passes unchanged, the part around the curve shrinks, and the outward part stops; this takes one small solve. 5: The output glides along the curved wall to the best allowed answer and always stays allowed, while the network&#39;s estimate moves with it.">
       <span aria-hidden="true" class="h3d-label lab-f" data-label="f">neural network estimate</span>
       <span aria-hidden="true" class="h3d-label lab-y" data-label="y">output</span>
-      <span aria-hidden="true" class="h3d-label lab-face" data-label="face">wall it touches</span>
+      <span aria-hidden="true" class="h3d-label lab-face" data-label="face">curved wall</span>
       <span aria-hidden="true" class="h3d-label lab-grad" data-label="grad">training push</span>
-      <span aria-hidden="true" class="h3d-label lab-pass" data-label="pass">kept</span>
-      <span aria-hidden="true" class="h3d-label lab-blocked" data-label="blocked">removed</span>
+      <span aria-hidden="true" class="h3d-label lab-pass" data-label="pass">passes</span>
+      <span aria-hidden="true" class="h3d-label lab-blocked" data-label="blocked">stops</span>
+      <span aria-hidden="true" class="h3d-label lab-around" data-label="around">shrinks with the curve</span>
       <span aria-hidden="true" class="h3d-label lab-C" data-label="C">allowed region</span>
       <span aria-hidden="true" class="h3d-label lab-best" data-label="best">best allowed answer</span>
       <div class="hero-fallback">
@@ -279,7 +281,7 @@
           <path d="M282,128 C250,40 140,20 60,48" fill="none" stroke="#EA580C" stroke-width="1.8" stroke-dasharray="6 5" marker-end="url(#arr)">
             <animate attributeName="stroke-dashoffset" values="0;-22" dur="1.2s" begin="3.0s" repeatCount="indefinite"/>
           </path>
-          <text x="22" y="32" fill="#C2410C" font-size="11.5" font-weight="600" font-family="DM Sans, sans-serif">ASPL keeps the push along the wall</text>
+          <text x="22" y="32" fill="#C2410C" font-size="11.5" font-weight="600" font-family="DM Sans, sans-serif">ASPL passes the push along the wall</text>
         </g>
       </svg>
       </div>

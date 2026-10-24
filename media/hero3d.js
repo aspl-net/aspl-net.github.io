@@ -1,9 +1,10 @@
-// Hero scene: a prediction f(x) outside a convex polytope C(x) is projected onto it.
-// Dykstra's algorithm (an exact Euclidean-projection solver) zig-zags onto the tight face,
-// so y = Pi_C(f) and f - y lies on the face's outward normal. A quadratic loss on y is then
-// drawn as level sets on the face; its descent direction -grad L splits into an in-face part,
-// which the layer passes back, and a normal part, which it blocks. Training then moves y
-// (and f with it) down the loss along the face. Cycles over faces; drag to rotate.
+// Hero scene: the allowed region C(x) is a glass barrel: a solid cylinder cut by two flat caps
+// and one slanted flat cut. The neural network estimate f lies outside it; Dykstra's algorithm
+// (an exact Euclidean-projection solver) hops onto the curved wall, so y = Pi_C(f) and f - y is the
+// wall's outward normal. A quadratic loss pulls y toward the best allowed answer on the wall. Its
+// push splits three ways at y, by the exact Jacobian of the projection: along the cylinder's axis
+// it passes unchanged, around the curve it shrinks by R/(R+h) (h = the estimate's distance from the
+// wall), outward it stops. Training moves f by -eta J^T grad L and y glides along the curved wall.
 // Debug: ?t=8.2 freezes the timeline, ?seed=N fixes the random choices, ?debug runs the numeric checks.
 (function () {
   const host = document.getElementById("hero3d");
@@ -75,58 +76,68 @@
   const world = new THREE.Group();
   scene.add(world);
 
-  // ---------- feasible set: a bevelled irregular dodecahedron, built from its half-spaces ----------
-  // The bevels sit about 32 degrees from the faces they join, so an exact projection solver
-  // visibly zig-zags between a face and its bevel before it settles.
+
+  // ---------- feasible set: a glass barrel ----------
+  // C = {x^2 + z^2 <= R^2} ∩ {|y| <= HB} ∩ {a.p <= b}: a curved wall (the cylinder side), two flat
+  // caps, and one slanted flat cut. Each piece has a closed-form projection.
+  const R = 0.95, HB = 0.8;
+  const CUTN = V(0.6, 0.8, 0).normalize(), CUTB = CUTN.dot(V(R, 0.35, 0));
+  const UP = V(0, 1, 0), DOWN = V(0, -1, 0);
+  const outAt = th => V(Math.cos(th), 0, Math.sin(th));
+  const aroundAt = th => V(-Math.sin(th), 0, Math.cos(th));
+  const onWall = (th, y, lift) => V((R + (lift || 0)) * Math.cos(th), y, (R + (lift || 0)) * Math.sin(th));
+  const hTop = th => Math.min(HB, (CUTB - CUTN.x * R * Math.cos(th) - CUTN.z * R * Math.sin(th)) / CUTN.y);
+  const clearance = p => Math.min(CUTB - CUTN.dot(p), HB - p.y, p.y + HB);
+  const NT = 192;
+  const topLoop = [], botLoop = [];
+  for (let i = 0; i < NT; i++) { const th = -Math.PI + 2 * Math.PI * i / NT; topLoop.push(onWall(th, hTop(th))); botLoop.push(onWall(th, -HB)); }
+  // where the slanted cut meets the top cap: a chord of the top circle
+  const chordEnds = (() => {
+    const k = CUTB - CUTN.y * HB, nn = CUTN.x * CUTN.x + CUTN.z * CUTN.z;
+    const p0 = V(CUTN.x * k / nn, HB, CUTN.z * k / nn), d = V(-CUTN.z, 0, CUTN.x).normalize();
+    const s = Math.sqrt(Math.max(R * R - p0.x * p0.x - p0.z * p0.z, 0));
+    return [p0.clone().addScaledVector(d, -s), p0.clone().addScaledVector(d, s)];
+  })();
   const geo = (() => {
-    const base = new THREE.DodecahedronGeometry(1.15, 0);
-    base.scale(1.25, 0.95, 1.05);
-    base.rotateZ(0.18);
-    const bp = base.attributes.position, planes = [];
-    for (let i = 0; i < bp.count; i += 3) {
-      const a = V().fromBufferAttribute(bp, i), b = V().fromBufferAttribute(bp, i + 1), c = V().fromBufferAttribute(bp, i + 2);
-      const n = V().subVectors(b, a).cross(V().subVectors(c, a)).normalize();
-      if (n.dot(a) < 0) n.negate();
-      if (!planes.some(P => P.n.dot(n) > 0.999)) planes.push({ n, d: n.dot(a), pts: [a, b, c] });
-      else planes.find(P => P.n.dot(n) > 0.999).pts.push(a, b, c);
+    const pos = [], nrm = [];
+    const tri = (a, b, c, na, nb, nc) => { pos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z); nrm.push(na.x, na.y, na.z, nb.x, nb.y, nb.z, nc.x, nc.y, nc.z); };
+    const NV = 10;
+    for (let i = 0; i < NT; i++) {
+      const t0 = -Math.PI + 2 * Math.PI * i / NT, t1 = -Math.PI + 2 * Math.PI * (i + 1) / NT;
+      const h0 = hTop(t0), h1 = hTop(t1), n0 = outAt(t0), n1 = outAt(t1);
+      for (let j = 0; j < NV; j++) {
+        const a = onWall(t0, -HB + (h0 + HB) * j / NV), a1 = onWall(t0, -HB + (h0 + HB) * (j + 1) / NV);
+        const b = onWall(t1, -HB + (h1 + HB) * j / NV), b1 = onWall(t1, -HB + (h1 + HB) * (j + 1) / NV);
+        tri(a, a1, b, n0, n0, n1); tri(a1, b1, b, n0, n1, n1);
+      }
     }
-    const BEVEL = 0.06, all = planes.map(P => ({ n: P.n, d: P.d }));
-    for (let i = 0; i < planes.length; i++) for (let j = i + 1; j < planes.length; j++) {
-      const sh = planes[i].pts.filter(p => Math.abs(planes[j].n.dot(p) - planes[j].d) < 1e-5);
-      if (sh.length < 2) continue;
-      const m = V().addVectors(planes[i].n, planes[j].n).normalize();
-      all.push({ n: m, d: m.dot(sh[0]) - BEVEL });
-    }
-    // vertices = feasible intersections of three planes
-    const vs = [];
-    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) for (let k = j + 1; k < all.length; k++) {
-      const M = new THREE.Matrix3().set(all[i].n.x, all[i].n.y, all[i].n.z, all[j].n.x, all[j].n.y, all[j].n.z, all[k].n.x, all[k].n.y, all[k].n.z);
-      if (Math.abs(M.determinant()) < 1e-6) continue;
-      const x = V(all[i].d, all[j].d, all[k].d).applyMatrix3(M.invert());
-      if (all.every(P => P.n.dot(x) <= P.d + 1e-7) && !vs.some(v => v.distanceTo(x) < 1e-6)) vs.push(x);
-    }
-    const tri = [], polys = [];
-    all.forEach(P => {
-      const on = vs.filter(v => Math.abs(P.n.dot(v) - P.d) < 1e-6);
-      if (on.length < 3) return;
-      const c = on.reduce((s, v) => s.add(v), V()).multiplyScalar(1 / on.length);
-      const t1 = V().subVectors(on[0], c).normalize(), t2 = V().crossVectors(P.n, t1);
-      on.sort((p, q) => Math.atan2(V().subVectors(p, c).dot(t2), V().subVectors(p, c).dot(t1)) - Math.atan2(V().subVectors(q, c).dot(t2), V().subVectors(q, c).dot(t1)));
-      for (let i = 0; i < on.length; i++) tri.push(c, on[i], on[(i + 1) % on.length]);
-      polys.push({ n: P.n, d: P.d, verts: on });
-    });
-    const g = new THREE.BufferGeometry().setFromPoints(tri);
-    g.computeVertexNormals();
-    g.userData.polys = polys;
+    // flat pieces: fans around their centroid, wound so the normal points out
+    const flat = (pts, n) => {
+      const c = pts.reduce((s, p) => s.add(p), V()).multiplyScalar(1 / pts.length);
+      const t1 = V().subVectors(pts[0], c); t1.addScaledVector(n, -t1.dot(n)).normalize();
+      const t2 = V().crossVectors(n, t1);
+      const P = pts.slice().sort((p, q) => Math.atan2(V().subVectors(p, c).dot(t2), V().subVectors(p, c).dot(t1)) - Math.atan2(V().subVectors(q, c).dot(t2), V().subVectors(q, c).dot(t1)));
+      for (let i = 0; i < P.length; i++) {
+        let p = P[i], q = P[(i + 1) % P.length];
+        if (V().subVectors(p, c).cross(V().subVectors(q, c)).dot(n) < 0) [p, q] = [q, p];
+        tri(c, p, q, n, n, n);
+      }
+    };
+    flat(botLoop, DOWN);
+    flat(topLoop.filter(p => p.y > HB - 1e-9).concat(chordEnds), UP);
+    flat(topLoop.filter(p => p.y < HB - 1e-9).concat(chordEnds), CUTN);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3));
     return g;
   })();
   const glass = { color: 0x7aaaf0, roughness: 0.2, metalness: 0, clearcoat: 0.85, clearcoatRoughness: 0.08,
-    envMapIntensity: 0.7, flatShading: true, transparent: true, depthWrite: false };
+    envMapIntensity: 0.7, transparent: true, depthWrite: false };
   const inner = new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial(Object.assign({}, glass, { side: THREE.BackSide, opacity: 0.3, color: 0x5b90e0 })));
-  const shell = new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial(Object.assign({}, glass, { side: THREE.FrontSide, opacity: 0.28 })));
-  // fresnel rim: glass brightens where it turns away from the viewer
+  const shell = new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial(Object.assign({}, glass, { side: THREE.FrontSide, opacity: 0.26 })));
+  // fresnel rim: glass brightens where it turns away from the viewer (this is what makes the curve read)
   const rimMesh = new THREE.Mesh(geo, new THREE.ShaderMaterial({
-    uniforms: { k: { value: 0.5 } },
+    uniforms: { k: { value: 0.55 } },
     vertexShader: "varying vec3 vN; varying vec3 vV; void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }",
     fragmentShader: "uniform float k; varying vec3 vN; varying vec3 vV; void main(){ float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.4); gl_FragColor = vec4(1.0, 1.0, 1.0, k * f); }",
     transparent: true, depthWrite: false, side: THREE.FrontSide
@@ -135,30 +146,17 @@
   world.add(inner, shell, rimMesh);
   // one shared unit cylinder, scaled per rod, so per-cycle rods allocate no GPU buffers
   const rodGeo = new THREE.CylinderGeometry(1, 1, 1, 8);
-  function rodMesh(a, b, r, m) {
+  function placeRod(o, a, b, r) {
     const d = V().subVectors(b, a), L = d.length();
-    const o = new THREE.Mesh(rodGeo, m);
     o.position.copy(a).addScaledVector(d, 0.5);
-    o.quaternion.setFromUnitVectors(V(0, 1, 0), d.normalize());
-    o.scale.set(r, L, r);
-    return o;
+    if (L > 1e-9) o.quaternion.setFromUnitVectors(UP, d.multiplyScalar(1 / L));
+    o.scale.set(r, Math.max(L, 1e-4), r);
   }
   {
-    // edges of the twelve main faces read lightly; the bevel seams stay fainter
-    const eg = new THREE.EdgesGeometry(geo, 1).attributes.position;
+    // the rims: bottom circle, the top rim (cap arc plus the slanted cut's ellipse) and the cap/cut seam
     const em = new THREE.MeshBasicMaterial({ color: 0x1e40af, transparent: true, opacity: 0.42 });
-    const emSoft = new THREE.MeshBasicMaterial({ color: 0x1e40af, transparent: true, opacity: 0.2 });
-    const polys = geo.userData.polys;
-    const area = P => P.verts.reduce((s, v, i) => s + V().subVectors(v, P.verts[0]).cross(V().subVectors(P.verts[(i + 1) % P.verts.length], P.verts[0])).length() / 2, 0);
-    polys.forEach(P => { P.area = area(P); });
-    const aMax = Math.max(...polys.map(P => P.area));
-    for (let i = 0; i < eg.count; i += 2) {
-      const a = V().fromBufferAttribute(eg, i), b = V().fromBufferAttribute(eg, i + 1), d = V().subVectors(b, a);
-      const main = polys.some(P => P.area > 0.5 * aMax && Math.abs(P.n.dot(a) - P.d) < 1e-6 && Math.abs(P.n.dot(b) - P.d) < 1e-6);
-      const r = rodMesh(a, b, main ? 0.0046 : 0.0034, main ? em : emSoft);
-      r.renderOrder = 3;
-      world.add(r);
-    }
+    const tube = (pts, closed) => new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, closed, "centripetal"), Math.max(2, pts.length), 0.0046, 6, closed), em);
+    [tube(botLoop, true), tube(topLoop, true), tube(chordEnds, false)].forEach(t => { t.renderOrder = 3; world.add(t); });
   }
   // soft contact shadow on an invisible floor
   let shadowTex = null;
@@ -169,52 +167,41 @@
     cx.fillStyle = gr; cx.fillRect(0, 0, 128, 128);
     shadowTex = new THREE.CanvasTexture(cv);
     const sh = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 3.4), new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false }));
-    sh.rotation.x = -Math.PI / 2; sh.position.set(-0.32, -1.3, 0); sh.scale.set(0.9, 0.62, 1);
+    sh.rotation.x = -Math.PI / 2; sh.position.set(-0.32, -1.22, 0); sh.scale.set(0.8, 0.6, 1);
     scene.add(sh);
   }
+  // outline points for the label placer (the shape's screen hull) and the camera's fit
+  const allVerts = topLoop.filter((_, i) => i % 4 === 0).concat(botLoop.filter((_, i) => i % 4 === 0));
 
-  // planar faces as half-spaces n.x <= d with outward unit normal n
-  const pos = geo.attributes.position;
-  const allVerts = []; geo.userData.polys.forEach(P => P.verts.forEach(v => { if (!allVerts.some(w => w.distanceTo(v) < 1e-6)) allVerts.push(v.clone()); }));
-  const faces = geo.userData.polys.map(P => ({ n: P.n.clone(), d: P.d, verts: P.verts.map(v => v.clone()) }));
-  function distToEdge(F, a, b, p) {
-    // in-plane distance from p to edge line ab, positive towards the face interior
-    const e = V().subVectors(b, a).normalize();
-    const inward = V().crossVectors(F.n, e).normalize();
-    const s = V().subVectors(F.c, a).dot(inward) >= 0 ? 1 : -1;
-    return s * V().subVectors(p, a).dot(inward);
-  }
-  function insideMargin(F, p) {
-    return Math.min(...F.verts.map((v, i) => distToEdge(F, v, F.verts[(i + 1) % F.verts.length], p)));
-  }
-  faces.forEach(F => {
-    F.c = F.verts.reduce((s, v) => s.add(v), V()).multiplyScalar(1 / F.verts.length);
-    F.c.addScaledVector(F.n, F.d - F.n.dot(F.c));
-    F.t1 = V().subVectors(F.verts[0], F.c);
-    F.t1.addScaledVector(F.n, -F.t1.dot(F.n)).normalize();
-    F.t2 = V().crossVectors(F.n, F.t1).normalize();
-    const ang = p => Math.atan2(V().subVectors(p, F.c).dot(F.t2), V().subVectors(p, F.c).dot(F.t1));
-    F.verts.sort((p, q) => ang(p) - ang(q));
-    F.r = insideMargin(F, F.c);
-  });
-  { const rMax = Math.max(...faces.map(G => G.r)); faces.forEach(G => { G.big = G.r > 0.6 * rMax; }); }
-  // Dykstra's algorithm onto the intersection of all half-spaces = exact Euclidean projection
-  function dykstra(x0, order, cycles, record) {
+  // ---------- exact projection ----------
+  const BLOCKS = [
+    p => { const v = CUTN.dot(p) - CUTB; return v > 0 ? p.clone().addScaledVector(CUTN, -v) : p.clone(); },   // slanted flat cut
+    p => { const r = Math.hypot(p.x, p.z); return r > R ? V(R * p.x / r, p.y, R * p.z / r) : p.clone(); },     // curved wall
+    p => p.y > HB ? V(p.x, HB, p.z) : p.clone(),                                                              // top cap
+    p => p.y < -HB ? V(p.x, -HB, p.z) : p.clone(),                                                            // bottom cap
+  ];
+  const feasible = (p, tol) => Math.hypot(p.x, p.z) <= R + tol && Math.abs(p.y) <= HB + tol && CUTN.dot(p) <= CUTB + tol;
+  // Dykstra's algorithm over the four pieces converges to the exact Euclidean projection
+  function dykstra(x0, cycles, record) {
     let x = x0.clone();
-    const P = faces.map(() => V());
+    const P = BLOCKS.map(() => V());
     const path = [x.clone()];
-    for (let k = 0; k < cycles; k++) {
-      for (const i of order) {
-        const H = faces[i];
-        const z = x.clone().add(P[i]);
-        const v = H.n.dot(z) - H.d;
-        const xn = v > 0 ? z.clone().addScaledVector(H.n, -v) : z.clone();
-        P[i].copy(z).sub(xn);
-        if (record && xn.distanceTo(x) > 1e-3) path.push(xn.clone());
-        x = xn;
-      }
+    for (let k = 0; k < cycles; k++) for (let i = 0; i < BLOCKS.length; i++) {
+      const z = x.clone().add(P[i]), xn = BLOCKS[i](z);
+      P[i].copy(z).sub(xn);
+      if (record && xn.distanceTo(x) > 1e-3) path.push(xn.clone());
+      x = xn;
     }
     return record ? path : x;
+  }
+  // closed form: the radial step onto the curved wall is the projection whenever it lands inside the
+  // other pieces (C is convex), which holds for every output in this scene
+  const projC = p => { const q = BLOCKS[1](p); return feasible(q, 1e-12) ? q : dykstra(p, 4000, false); };
+  // the projection's Jacobian at an estimate f whose output lies inside the curved wall, applied to v
+  // (it is symmetric): along the axis x1, around the curve x R/r, outward x0, where r = R + h
+  function jacT(f, v) {
+    const r = Math.hypot(f.x, f.z), e = V(-f.z / r, 0, f.x / r);
+    return V(0, v.y, 0).addScaledVector(e, (R / r) * e.dot(v));
   }
 
 
@@ -247,6 +234,7 @@
     g.userData.head.position.set(0, L - 0.07 * s, 0);
   }
 
+
   // ---------- per-cycle objects ----------
   const faceMat = new THREE.MeshBasicMaterial({ color: 0xfbbf8a, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false });
   const edgeMat = mat(ORANGE, { emissive: 0xc2410c, emissiveIntensity: 0.55 });
@@ -255,7 +243,7 @@
   const ySphere = new THREE.Mesh(new THREE.SphereGeometry(0.07, 24, 16), mat(ORANGE, { emissive: 0xea580c, emissiveIntensity: 0.45 }));
   const glow = new THREE.Mesh(new THREE.SphereGeometry(0.16, 24, 16), new THREE.MeshBasicMaterial({ color: ORANGE, transparent: true, opacity: 0, depthWrite: false }));
   world.add(fSphere, ySphere, glow);
-  // dashed segments (residual f - y, and the sides of the gradient split)
+  // dashed segments (the residual f - y along the wall's outward normal)
   const dashGeo = new THREE.CylinderGeometry(0.008, 0.008, 1, 6); dashGeo.translate(0, 0.5, 0);
   function dashPool(n, color) {
     const m = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false });
@@ -263,22 +251,21 @@
     for (let k = 0; k < n; k++) { const d = new THREE.Mesh(dashGeo, m); d.renderOrder = 4; d.visible = false; list.push(d); world.add(d); }
     return { m, list };
   }
-  function dashLine(pool, from, a, b, DL, GAP, skip0) {
+  function dashLine(pool, from, a, b, DL, GAP) {
     const d = V().subVectors(b, a), L = d.length(); d.normalize();
     let k = from;
-    for (let s = skip0 || 0; s + DL <= L + 1e-6 && k < pool.list.length; s += DL + GAP, k++) {
+    for (let s = 0; s + DL <= L + 1e-6 && k < pool.list.length; s += DL + GAP, k++) {
       const m = pool.list[k];
       m.visible = true; m.position.copy(a).addScaledVector(d, s);
-      m.quaternion.setFromUnitVectors(V(0, 1, 0), d); m.scale.set(1, DL, 1);
+      m.quaternion.setFromUnitVectors(UP, d); m.scale.set(1, DL, 1);
     }
     return k;
   }
   const resDash = dashPool(18, NAVY);
-  // solver path: one navy tube per Dykstra step, revealed in order, a dot at each iterate,
-  // and a bead running along it
+  // solver path: one navy tube per Dykstra step, revealed in order, a dot at each iterate, and a bead
   const itMat = new THREE.MeshBasicMaterial({ color: NAVY, transparent: true, opacity: 0, depthWrite: false });
   const dotMat = new THREE.MeshBasicMaterial({ color: NAVY, transparent: true, opacity: 0, depthWrite: false });
-  const MAXIT = 16;
+  const MAXIT = 12;
   const segGeo = new THREE.CylinderGeometry(0.017, 0.017, 1, 8); segGeo.translate(0, 0.5, 0);
   const dotGeo = new THREE.SphereGeometry(0.027, 14, 10);
   const segs = [], dots = [];
@@ -288,17 +275,43 @@
   }
   const bead = new THREE.Mesh(new THREE.SphereGeometry(0.04, 18, 12), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0 }));
   bead.renderOrder = 5; world.add(bead);
-  // loss on the face: level sets and the minimizer
+  // loss on the curved wall: true level sets, and the best allowed answer
   const contourMat = new THREE.LineBasicMaterial({ color: NAVY, transparent: true, opacity: 0, depthWrite: false });
   let contours = null;
   const ringMat = new THREE.MeshBasicMaterial({ color: NAVY, transparent: true, opacity: 0, depthWrite: false });
   const ring = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.009, 8, 40), ringMat);
   const ringDot = new THREE.Mesh(new THREE.SphereGeometry(0.02, 12, 8), ringMat);
   ring.renderOrder = ringDot.renderOrder = 4; world.add(ring, ringDot);
-  // descent direction -grad L at y and its split into the passed (in-face) and blocked (normal) parts
-  const SLATE = 0x334155, RED = 0xdc2626;
-  const gArr = arrow(SLATE), passArr = arrow(0x1d4ed8, 0.028, 0.07), blockArr = arrow(RED);
-  // a red cross on the removed part, always facing the viewer
+  // the training push at the output and its three parts
+  const SLATE = 0x334155, RED = 0xdc2626, AMBER = 0xd97706;
+  const gArr = arrow(SLATE), passArr = arrow(0x1d4ed8, 0.03, 0.075), blockArr = arrow(RED, 0.023, 0.062);
+  // around the curve: an arrow that follows the wall's circle, drawn from shared rods
+  const arcMat = mat(AMBER, { emissive: AMBER, emissiveIntensity: 0.4 });
+  const NARC = 14, arcRods = [], ghostRods = [];
+  const ghostMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0, depthWrite: false });
+  for (let k = 0; k < NARC; k++) {
+    const a = new THREE.Mesh(rodGeo, arcMat); a.renderOrder = 4; arcRods.push(a); world.add(a);
+    const g = new THREE.Mesh(rodGeo, ghostMat); g.renderOrder = 3.5; ghostRods.push(g); world.add(g);
+  }
+  const arcHead = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.14, 14), arcMat); arcHead.renderOrder = 4; world.add(arcHead);
+  const arcEnd = V();
+  function placeArc(yp, sgn, L, ghostL) {
+    // arrow of arc length L from yp along the wall's circle (lifted a little off the glass);
+    // the ghost shows the full length before the shrink
+    const th0 = Math.atan2(yp.z, yp.x), lift = 0.014, hl = Math.min(0.13, Math.max(L, 1e-4) * 0.5), s = hl / 0.14;
+    const body = Math.max(L - hl, 1e-4);
+    const at = (len, out) => { const th = th0 + sgn * len / R; return out.set((R + lift) * Math.cos(th), yp.y, (R + lift) * Math.sin(th)); };
+    const pa = V(), pb = V();
+    arcRods.forEach((o, k) => { at(body * k / NARC, pa); at(body * (k + 1) / NARC, pb); placeRod(o, pa, pb, 0.019); });
+    at(body, arcEnd);
+    const thE = th0 + sgn * body / R, tan = aroundAt(thE).multiplyScalar(sgn);
+    arcHead.position.copy(arcEnd).addScaledVector(tan, 0.07 * s);
+    arcHead.quaternion.setFromUnitVectors(UP, tan);
+    arcHead.scale.setScalar(Math.max(s, 1e-3));
+    at(L, arcEnd);
+    ghostRods.forEach((o, k) => { at(ghostL * k / NARC, pa); at(ghostL * (k + 1) / NARC, pb); placeRod(o, pa, pb, 0.009); });
+  }
+  // a red cross on the outward part, always facing the viewer
   const crossMat = new THREE.MeshBasicMaterial({ color: RED, transparent: true, opacity: 0, depthWrite: false, depthTest: false });
   const cross = new THREE.Group();
   [Math.PI / 4, -Math.PI / 4].forEach(a => {
@@ -307,8 +320,8 @@
   cross.renderOrder = 6; cross.children.forEach(c => { c.renderOrder = 6; });
   world.add(cross);
   const qInv = new THREE.Quaternion();
-  // gradient-descent trail on the face, older steps fade
-  const NGD = 14;
+  // the output's trail along the curved wall, older steps fade
+  const NGD = 16;
   const trailSegs = [], trailDots = [];
   const trailGeo = new THREE.CylinderGeometry(0.017, 0.017, 1, 8); trailGeo.translate(0, 0.5, 0);
   for (let k = 0; k < NGD; k++) {
@@ -317,196 +330,180 @@
     const d = new THREE.Mesh(new THREE.SphereGeometry(0.026, 12, 8), m); d.renderOrder = 4; trailDots.push(d); world.add(d);
   }
 
-  // loss L(y) = 1/2 (y - t)^T A (y - t), A = A1 u u^T + A2 w w^T + A3 n n^T, t = ys + tn n.
-  // u, w span the face, so on the face L is an elliptic bowl centred at ys; t lies outside C,
-  // so -grad L also points out of the face, and that part is what the layer blocks.
-  const A1 = 1, A2 = 3.2, A3 = 1, ETA = 0.21;
-  let F, y0, h, its, faceLabelAt, freeB, loss = null;
-  function gradL(y) {
-    const d = V().subVectors(y, loss.t);
-    return V().addScaledVector(loss.u, A1 * loss.u.dot(d)).addScaledVector(loss.w, A2 * loss.w.dot(d)).addScaledVector(F.n, A3 * F.n.dot(d));
-  }
-  function lossVal(y) {
-    const d = V().subVectors(y, loss.t);
-    return 0.5 * (A1 * loss.u.dot(d) ** 2 + A2 * loss.w.dot(d) ** 2 + A3 * F.n.dot(d) ** 2);
-  }
-  const projT = g => g.clone().addScaledVector(F.n, -g.dot(F.n));
-  function gdPath() {
-    // the training step through the layer: y <- y - eta * P_T grad L(y)  (P_T = Jacobian of the projection)
-    const P = [y0.clone()];
-    for (let k = 0; k < NGD; k++) P.push(P[k].clone().addScaledVector(projT(gradL(P[k])), -ETA));
-    return P;
-  }
+  // loss L(y) = 1/2 |y - t|^2, with t outside C straight out from a point ys of the curved wall,
+  // so the best allowed answer is ys; its excess over the minimum is a bowl on the wall
+  const ETA = 0.5, DT = 0.8;
+  let F, y0, f0, h, its, faceLabelAt, loss = null;
   const labels = {};
   host.querySelectorAll("[data-label]").forEach(el => { labels[el.dataset.label] = el; });
   const leader = document.createElement("i");
   leader.className = "h3d-leader"; leader.setAttribute("aria-hidden", "true");
   host.appendChild(leader);
-
-  // the chosen face is turned so its outward normal points here (world frame):
-  // toward the camera, to the right and slightly up, so f(x) floats in open space.
-  const NSTAR = V(0.7, 0.2, 0.69).normalize();
-  let lastFace = -1;
-  function pickFace(q) {
-    const cand = [];
-    faces.forEach((G, i) => {
-      if (i === lastFace || !G.big) return;
-      const c = G.n.clone().applyQuaternion(q).dot(NSTAR);
-      if (c > 0.05 && c < 0.8) cand.push(i);
-    });
-    const pool = cand.length ? cand : faces.map((_, i) => i).filter(i => i !== lastFace && faces[i].big);
-    lastFace = pool[Math.floor(rand() * pool.length)];
-    return lastFace;
-  }
+  const PHIN = Math.atan2(0.69, 0.7);  // the output's outward normal turns to face right and toward the viewer
   const sideMemo = {};
-  function newCycle(q0) {
-    const fi = pickFace(q0);
-    F = faces[fi];
-    const q = new THREE.Quaternion().setFromUnitVectors(F.n.clone().applyQuaternion(q0), NSTAR).multiply(q0);
+  function newCycle() {
+    let pick = null;
+    for (let tries = 0; tries < 600 && !pick; tries++) {
+      // the output sits inside the curved wall, just below the slanted cut, so the estimate overshoots
+      // the cut as well and the solver has to hop between the two
+      const th0 = (2 * rand() - 1) * 0.5, hh = 0.45 + 0.15 * rand(), c0 = 0.1 + 0.08 * rand();
+      const u0 = outAt(th0);
+      const yy0 = (CUTB - c0 - CUTN.x * R * Math.cos(th0) - CUTN.z * R * Math.sin(th0)) / CUTN.y;
+      if (yy0 < -HB + 0.4 || yy0 > HB - 0.12) continue;
+      const Y0 = onWall(th0, yy0), Fp = Y0.clone().addScaledVector(u0, hh);
+      if (CUTN.dot(Fp) < CUTB + 0.05) continue;
+      const sg = rand() < 0.5 ? -1 : 1, ths = th0 + sg * (0.55 + 0.35 * rand()), ysY = yy0 - (0.2 + 0.3 * rand());
+      const YS = onWall(ths, ysY);
+      if (clearance(YS) < 0.12) continue;
+      const t = YS.clone().addScaledVector(outAt(ths), DT);
+      // the push must have a readable part in each of the three directions
+      const g = V().subVectors(t, Y0), gl = g.length();
+      if (g.dot(u0) < 0.3 * gl || Math.abs(g.y) < 0.38 * gl || Math.abs(g.dot(aroundAt(th0))) < 0.3 * gl) continue;
+      // training through the layer: f <- f - eta J^T grad L(y), y = Pi(f)
+      const Pf = [Fp.clone()], Py = [Y0.clone()], L = [0.5 * Y0.distanceToSquared(t)];
+      let ok = true;
+      for (let k = 0; k < NGD && ok; k++) {
+        const fN = Pf[k].clone().sub(jacT(Pf[k], V().subVectors(Py[k], t)).multiplyScalar(ETA));
+        const yN = BLOCKS[1](fN);
+        if (clearance(yN) < 0.08 || Math.hypot(fN.x, fN.z) < R + 0.05) ok = false;
+        const LN = 0.5 * yN.distanceToSquared(t);
+        if (LN > L[k] + 1e-12) ok = false;
+        Pf.push(fN); Py.push(yN); L.push(LN);
+      }
+      if (!ok || Py[NGD].distanceTo(YS) > 0.1) continue;
+      pick = { th0, hh, u0, Y0, Fp, YS, ths, t, Pf, Py, L, sg };
+    }
+    if (!pick) throw new Error("hero: no placement");
+    h = pick.hh; y0 = pick.Y0; f0 = pick.Fp;
+    // yaw so the output's outward normal faces right and toward the viewer; a slight tilt shows the top
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.16, pick.th0 - PHIN, 0, "XYZ"));
+
+    // the curved-wall patch where all of this happens
+    const tA = Math.min(pick.th0, pick.ths) - 0.34, tB = Math.max(pick.th0, pick.ths) + 0.34;
+    const yA = Math.max(-HB + 0.04, Math.min(y0.y, pick.YS.y) - 0.3), yBmax = Math.max(y0.y, pick.YS.y) + 0.24;
+    const yTop = th => Math.min(yBmax, hTop(th) - 0.035);
+    const inPatch = (th, y) => th >= tA && th <= tB && y >= yA && y <= yTop(th);
     if (faceMesh) { world.remove(faceMesh); faceMesh.geometry.dispose(); }
-    if (faceEdges) world.remove(faceEdges);
-    const lift = F.n.clone().multiplyScalar(0.004);
-    const pts = [F.c.clone().add(lift)].concat(F.verts.map(v => v.clone().add(lift)));
-    const idx = [];
-    for (let i = 1; i <= F.verts.length; i++) idx.push(0, i, i % F.verts.length + 1);
-    const g = new THREE.BufferGeometry().setFromPoints(pts);
-    g.setIndex(idx);
-    faceMesh = new THREE.Mesh(g, faceMat);
-    faceMesh.renderOrder = 2.5;
-    world.add(faceMesh);
-    faceEdges = new THREE.Group();
-    F.verts.forEach((v, i) => faceEdges.add(rodMesh(v, F.verts[(i + 1) % F.verts.length], 0.02, edgeMat)));
-    world.add(faceEdges);
+    if (faceEdges) { world.remove(faceEdges); faceEdges.geometry.dispose(); }
+    {
+      const pos = [], NP = 36, NQ = 10;
+      const P = (i, j) => { const th = tA + (tB - tA) * i / NP; return onWall(th, yA + (yTop(th) - yA) * j / NQ, 0.004); };
+      for (let i = 0; i < NP; i++) for (let j = 0; j < NQ; j++) {
+        const a = P(i, j), a1 = P(i, j + 1), b = P(i + 1, j), b1 = P(i + 1, j + 1);
+        pos.push(a.x, a.y, a.z, a1.x, a1.y, a1.z, b.x, b.y, b.z, a1.x, a1.y, a1.z, b1.x, b1.y, b1.z, b.x, b.y, b.z);
+      }
+      const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+      faceMesh = new THREE.Mesh(g, faceMat); faceMesh.renderOrder = 2.5; world.add(faceMesh);
+    }
+    const border = [];
+    for (let i = 0; i <= 24; i++) border.push(onWall(tA + (tB - tA) * i / 24, yA, 0.006));
+    for (let j = 1; j <= 6; j++) border.push(onWall(tB, yA + (yTop(tB) - yA) * j / 6, 0.006));
+    for (let i = 23; i >= 0; i--) { const th = tA + (tB - tA) * i / 24; border.push(onWall(th, yTop(th), 0.006)); }
+    for (let j = 5; j >= 1; j--) border.push(onWall(tA, yA + (yTop(tA) - yA) * j / 6, 0.006));
+    faceEdges = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(border, true, "centripetal"), 120, 0.013, 6, true), edgeMat);
+    faceEdges.renderOrder = 3; world.add(faceEdges);
+    F = { n: pick.u0.clone(), c: onWall((tA + tB) / 2, (yA + yTop((tA + tB) / 2)) / 2), verts: border.filter((_, i) => i % 3 === 0) };
     for (const k in sideMemo) delete sideMemo[k];
 
-    // y0: interior point shifted toward one edge, so f also violates the neighbouring face
-    // and the solver has to zig-zag between the two before settling on the tight face.
-    const qi = q.clone().invert();
-    const upL = V(0, 1, 0).applyQuaternion(qi);
-    upL.addScaledVector(F.n, -upL.dot(F.n)).normalize();
-    let ei = 0, eb = -1e9;
-    F.verts.forEach((v, i) => {
-      const m = v.clone().add(F.verts[(i + 1) % F.verts.length]).multiplyScalar(0.5);
-      const s = V().subVectors(m, F.c).normalize().dot(upL) + 0.15 * rand();
-      if (s > eb) { eb = s; ei = i; }
-    });
-    const ea = F.verts[ei], ebv = F.verts[(ei + 1) % F.verts.length];
-    const mid = ea.clone().add(ebv).multiplyScalar(0.5);
-    y0 = F.c.clone().lerp(mid, 0.72);
-    y0.addScaledVector(F.n, F.d - F.n.dot(y0));
-    const G = faces.reduce((best, H, j) => (j !== fi && Math.abs(H.n.dot(ea) - H.d) < 1e-4 && Math.abs(H.n.dot(ebv) - H.d) < 1e-4) ? H : best, null);
-    const gi = faces.indexOf(G);
-    const margin = G.d - G.n.dot(y0);
-    h = Math.min(Math.max((margin + 0.36) / Math.max(G.n.dot(F.n), 0.2), 0.75), 0.95);
-    const fpt = y0.clone().addScaledVector(F.n, h);
-    const order = [gi, fi].concat(faces.map((_, j) => j).filter(j => j !== gi && j !== fi));
-    its = dykstra(fpt, order, 12, true).slice(0, MAXIT);
+    // solver hops from the estimate onto the wall
+    its = dykstra(f0, 6, true).slice(0, MAXIT);
     its.push(y0.clone());
     segs.forEach((sg, k) => {
       sg.userData.on = k + 1 < its.length;
       if (!sg.userData.on) return;
       const a = its[k], b = its[k + 1], d = V().subVectors(b, a);
-      sg.position.copy(a); sg.quaternion.setFromUnitVectors(V(0, 1, 0), d.clone().normalize()); sg.userData.L = d.length();
+      sg.position.copy(a); sg.quaternion.setFromUnitVectors(UP, d.clone().normalize()); sg.userData.L = d.length();
     });
-    // a dot per iterate, skipping ones that crowd the output or the previous dot
     let lastDot = its[0];
     dots.forEach((d, k) => {
       const p = its[k + 1];
       d.userData.on = k + 1 < its.length - 1 && p.distanceTo(y0) > 0.11 && p.distanceTo(lastDot) > 0.07;
       if (d.userData.on) { d.position.copy(p); lastDot = p; }
     });
-    freeB = V().crossVectors(F.n, V().subVectors(F.c, y0).normalize()).normalize();
-    if (freeB.clone().applyQuaternion(q).x < 0) freeB.negate();
 
-    // loss: minimizer ys inside the face, bowl axes u, w; keep a candidate whose descent path
-    // stays well inside the face, travels far enough to read, and visibly bends.
-    const dir = V().subVectors(F.c, y0).normalize(), side = V().crossVectors(F.n, dir);
-    let pick = null, fallback = null;
-    for (let tries = 0; tries < 160 && !pick; tries++) {
-      const rho = (0.2 + 0.4 * rand()) * F.r, ang = (2 * rand() - 1) * 1.1, phi = rand() * Math.PI;
-      const ys = F.c.clone().addScaledVector(dir, rho * Math.cos(ang)).addScaledVector(side, rho * Math.sin(ang));
-      const u = F.t1.clone().multiplyScalar(Math.cos(phi)).addScaledVector(F.t2, Math.sin(phi)).normalize();
-      const w = V().crossVectors(F.n, u).normalize();
-      loss = { ys, u, w, t: ys.clone() };
-      const gT = projT(gradL(y0)).length();
-      loss.t = ys.clone().addScaledVector(F.n, 1.1 * gT / A3);
-      const P = gdPath();
-      const minM = Math.min(...P.map(p => insideMargin(F, p)));
-      const chord = V().subVectors(P[NGD], y0), cl = chord.length();
-      let bend = 0;
-      P.forEach(p => { const r = V().subVectors(p, y0); bend = Math.max(bend, r.addScaledVector(chord, -r.dot(chord) / (cl * cl)).length()); });
-      // on screen the passed direction should point down, so the blocked one lands to the right
-      const gw = projT(gradL(y0)).negate().applyQuaternion(q);
-      const down = -gw.y / Math.hypot(gw.x, gw.y);
-      const c = { ys, u, w, t: loss.t, P, minM, bend, cl, down };
-      if (minM > 0.07 && (!fallback || down > fallback.down)) fallback = c;
-      if (minM > 0.07 && cl > 0.42 && bend > 0.07 && down > 0.75) pick = c;
-    }
-    if (!fallback) fallback = { ys: F.c.clone(), u: F.t1.clone(), w: F.t2.clone(), t: F.c.clone().addScaledVector(F.n, 0.3), minM: 0, bend: 0, cl: 0, down: 0 };
-    loss = pick || fallback;
-    if (!loss.P) loss.P = gdPath();
-    loss.gT0 = projT(gradL(y0)).length();
-    // the output's direction of travel during training (its label sits across it)
-    loss.travel = V().subVectors(loss.P[NGD], loss.P[0]).normalize().multiplyScalar(0.3);
-    loss.GS = 0.48 / loss.gT0;
-    loss.side = V().crossVectors(F.n, projT(gradL(y0)).normalize()).normalize();               // display scale: the in-face part is drawn 0.48 long
-    loss.L = loss.P.map(p => lossVal(p));
+    // loss, its level sets on the wall, and the training path
+    loss = { t: pick.t, ys: pick.YS, ths: pick.ths, P: pick.Py, Pf: pick.Pf, L: pick.L };
+    loss.thP = loss.P.map(p => Math.atan2(p.z, p.x));
+    loss.thF = loss.Pf.map(p => Math.atan2(p.z, p.x));
+    loss.rF = loss.Pf.map(p => Math.hypot(p.x, p.z));
     loss.cumT = [0];
     for (let k = 0; k < NGD; k++) loss.cumT.push(loss.cumT[k] + Math.pow(loss.P[k].distanceTo(loss.P[k + 1]), 0.55));
-    // level sets of L on the face plane (true ellipses), clipped to the face polygon
+    loss.travel = V().subVectors(loss.P[NGD], loss.P[0]).normalize().multiplyScalar(0.3);
+    const g0 = V().subVectors(loss.t, y0);
+    loss.GS = 0.85 / g0.length();
+    // the camera sits on the side the around-arc heads toward, so the arc comes toward the viewer
+    loss.side = aroundAt(pick.th0).multiplyScalar(g0.dot(aroundAt(pick.th0)) >= 0 ? 1 : -1);
     if (contours) { world.remove(contours); contours.geometry.dispose(); }
-    const L0 = 0.5 * (A1 * loss.u.dot(V().subVectors(y0, loss.ys)) ** 2 + A2 * loss.w.dot(V().subVectors(y0, loss.ys)) ** 2);
-    const cp = [];
-    [0.06, 0.25, 0.55, 1.0, 1.6, 2.4].forEach(s => {
-      const c = s * L0, ra = Math.sqrt(2 * c / A1), rb = Math.sqrt(2 * c / A2);
-      let prev = null;
-      for (let k = 0; k <= 160; k++) {
-        const th = k / 160 * Math.PI * 2;
-        const p = loss.ys.clone().addScaledVector(loss.u, ra * Math.cos(th)).addScaledVector(loss.w, rb * Math.sin(th));
-        const ok = insideMargin(F, p) > 0.012;
-        const pl = p.addScaledVector(F.n, 0.006);
-        if (ok && prev) cp.push(prev, pl);
-        prev = ok ? pl : null;
-      }
-    });
-    contours = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(cp), contourMat);
-    contours.renderOrder = 4;
-    world.add(contours);
-    ring.position.copy(loss.ys).addScaledVector(F.n, 0.008);
-    ring.quaternion.setFromUnitVectors(V(0, 0, 1), F.n);
+    {
+      // excess loss on the wall: 1/2 [ (y - ys_y)^2 + 2 R (R + DT) (1 - cos(th - ths)) ]
+      const Rt = R * (R + DT), E0 = 0.5 * ((y0.y - loss.ys.y) ** 2 + 2 * Rt * (1 - Math.cos(pick.th0 - loss.ths)));
+      const cp = [];
+      [0.05, 0.2, 0.45, 0.8, 1.25, 1.85, 2.6].forEach(s => {
+        const c = s * E0;
+        let prev = null;
+        for (let k = 0; k <= 180; k++) {
+          const psi = k / 180 * Math.PI * 2, cs = Math.cos(psi);
+          const arg = 1 - c * cs * cs / Rt;
+          if (arg < -1) { prev = null; continue; }
+          const th = loss.ths + Math.sign(cs) * Math.acos(arg), y = loss.ys.y + Math.sqrt(2 * c) * Math.sin(psi);
+          const ok = inPatch(th, y) && y < yTop(th) - 0.012 && y > yA + 0.012 && th > tA + 0.012 && th < tB - 0.012;
+          const pl = onWall(th, y, 0.007);
+          if (ok && prev) cp.push(prev, pl);
+          prev = ok ? pl : null;
+        }
+      });
+      contours = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(cp), contourMat);
+      contours.renderOrder = 4; world.add(contours);
+    }
+    ring.position.copy(onWall(loss.ths, loss.ys.y, 0.009));
+    ring.quaternion.setFromUnitVectors(V(0, 0, 1), outAt(loss.ths));
     ringDot.position.copy(ring.position);
     trailSegs.forEach((sg, k) => {
-      const a = loss.P[k], b = loss.P[k + 1], d = V().subVectors(b, a);
-      sg.position.copy(a); sg.quaternion.setFromUnitVectors(V(0, 1, 0), d.clone().normalize()); sg.userData.L = d.length();
+      const a = onWall(loss.thP[k], loss.P[k].y, 0.012), b = onWall(loss.thP[k + 1], loss.P[k + 1].y, 0.012), d = V().subVectors(b, a);
+      sg.position.copy(a); sg.quaternion.setFromUnitVectors(UP, d.clone().normalize()); sg.userData.L = d.length();
       trailDots[k].position.copy(a);
     });
-
     {
-      // points the close-up must show: the wall, the estimate, the push and its two parts
-      const g0 = gradL(y0).multiplyScalar(-loss.GS), gT0 = projT(g0);
-      loss.key = F.verts.map(v => v.clone()).concat([fpt.clone(), y0.clone().add(g0), y0.clone().add(gT0), y0.clone().add(g0.clone().sub(gT0)), loss.ys.clone()]);
+      // what the close-up must show: the patch, the estimate, the push and its three parts, the ring
+      const g = g0.clone().multiplyScalar(loss.GS), e0 = aroundAt(pick.th0);
+      const arcTip = onWall(pick.th0 + Math.sign(g.dot(e0)) * Math.abs(g.dot(e0)) / R, y0.y);
+      loss.key = F.verts.filter((_, i) => i % 2 === 0).concat([f0.clone(), y0.clone().add(g), y0.clone().add(V(0, g.y, 0)), arcTip,
+        y0.clone().addScaledVector(pick.u0, Math.max(g.dot(pick.u0), 0)), loss.ys.clone()]);
+      // the tighter close-up while the push is shown and split: the output and the three parts
+      const around = [y0.clone().addScaledVector(e0, 0.2), y0.clone().addScaledVector(e0, -0.2), y0.clone().add(V(0, 0.16, 0)), y0.clone().add(V(0, -0.16, 0))];
+      loss.keyPush = [y0.clone(), y0.clone().add(g)].concat(around);
+      loss.keySplit = [y0.clone(), y0.clone().add(V(0, g.y, 0)), arcTip,
+        y0.clone().addScaledVector(pick.u0, Math.max(g.dot(pick.u0), 0))].concat(around);
     }
     let far = F.verts[0], fd = -1;
-    F.verts.forEach(v => { const d = v.distanceTo(fpt); if (d > fd) { fd = d; far = v; } });
-    faceLabelAt = far.clone().addScaledVector(V().subVectors(far, F.c).normalize(), 0.12);
+    F.verts.forEach(v => { const d = v.distanceTo(f0); if (d > fd) { fd = d; far = v; } });
+    faceLabelAt = far.clone().addScaledVector(V().subVectors(far, F.c).normalize(), 0.1);
 
     // numerical checks (debug visits only: ?t=, ?perf, ?debug)
     if (!DEBUG) return q;
-    const yStar = dykstra(fpt, order, 400, false);
-    let projErrPath = 0, passDotN = 0, maxRise = -1e9;
+    const yStar = dykstra(f0, 4000, false);
+    let projErrPath = 0, maxRise = -1e9, onWallErr = 0, minClear = 1e9, outsideMin = 1e9;
     loss.P.forEach((p, k) => {
-      projErrPath = Math.max(projErrPath, dykstra(p.clone().addScaledVector(F.n, h), order, 400, false).distanceTo(p));
-      passDotN = Math.max(passDotN, Math.abs(projT(gradL(p)).dot(F.n)));
+      projErrPath = Math.max(projErrPath, dykstra(loss.Pf[k], 4000, false).distanceTo(p));
+      onWallErr = Math.max(onWallErr, Math.abs(Math.hypot(p.x, p.z) - R));
+      minClear = Math.min(minClear, clearance(p));
+      outsideMin = Math.min(outsideMin, Math.hypot(loss.Pf[k].x, loss.Pf[k].z) - R);
       if (k) maxRise = Math.max(maxRise, loss.L[k] - loss.L[k - 1]);
     });
-    const gN = gradL(y0).dot(F.n);
+    // Jacobian against central finite differences of the exact projection at the estimate
+    let jacErr = 0;
+    const eps = 1e-6;
+    [V(1, 0, 0), V(0, 1, 0), V(0, 0, 1)].forEach(e => {
+      const fd = projC(f0.clone().addScaledVector(e, eps)).sub(projC(f0.clone().addScaledVector(e, -eps))).multiplyScalar(1 / (2 * eps));
+      jacErr = Math.max(jacErr, fd.distanceTo(jacT(f0, e)));
+    });
+    const e0 = aroundAt(pick.th0), r0 = Math.hypot(f0.x, f0.z);
     Object.assign(dbg, {
-      face: fi, h: +h.toFixed(3), iterates: its.length, visibleSteps: its.filter((p, k) => k && p.distanceTo(its[k - 1]) > 0.02).length,
-      projErr: yStar.distanceTo(y0), projErrPath, passDotN, gradNormalOutward: gN < 0,
-      lossMonotone: maxRise < 0, maxRise, lossDrop: loss.L[NGD] / loss.L[0] ,
-      pathMinMargin: loss.minM, pathBend: loss.bend, pathChord: loss.cl, picked: !!pick,
-      onPlane: Math.max(...loss.P.map(p => Math.abs(F.n.dot(p) - F.d))),
-      minimizerMargin: insideMargin(F, loss.ys), finalDist: loss.P[NGD].distanceTo(loss.ys)
+      h: +h.toFixed(3), hops: its.length - 1, hopCuts: its.filter((p, k) => k && Math.abs(CUTN.dot(p) - CUTB) < 1e-9).length,
+      projErr: yStar.distanceTo(y0), projErrPath, jacErr,
+      factorAxis: jacT(f0, UP).dot(UP), factorAround: jacT(f0, e0).dot(e0), factorAroundExpected: R / r0, factorOut: jacT(f0, pick.u0).length(),
+      lossMonotone: maxRise < 0, maxRise, lossDrop: loss.L[NGD] / loss.L[0], onWallErr, minClear, estimateOutsideMin: outsideMin,
+      startClear: clearance(y0), bestClear: clearance(loss.ys), finalDist: loss.P[NGD].distanceTo(loss.ys)
     });
     return q;
   }
@@ -514,7 +511,7 @@
   // ---------- timeline (seconds within a cycle): five narrated steps, then a short hold ----------
   // the animation is scripted on its own clock (OLD); the viewer's clock (NEW) gives each step
   // time to read its sentence, and holds the wide shot before the loop restarts.
-  const OLD = [0, 3.4, 6.6, 9.8, 13.2, 18.0, 18.8], NEW = [0, 3.6, 7.2, 10.6, 15.6, 20.6, 21.4];
+  const OLD = [0, 3.4, 6.6, 9.8, 13.2, 18.0, 18.8], NEW = [0, 3.5, 6.5, 9.5, 14.5, 20.0, 20.8];
   const CYCLE = NEW[6];
   function warp(t) {
     let k = 0; while (k < 5 && t >= NEW[k + 1]) k++;
@@ -522,10 +519,10 @@
   }
   const STEPS = [
     [NEW[0], NEW[1], "The neural network makes an estimate, outside the allowed region."],
-    [NEW[1], NEW[2], "A standard solver zig-zags to the nearest allowed point; ASPL notes which wall it lands on."],
-    [NEW[2], NEW[3], "Training pushes the output toward the best allowed answer (the ring), partly across the wall."],
-    [NEW[3], NEW[4], "ASPL keeps the part along the wall and removes the part across it, with one small exact solve."],
-    [NEW[4], NEW[6], "The output slides along the wall toward the best allowed answer; the estimate moves with it."],
+    [NEW[1], NEW[2], "A solver finds the nearest allowed point; ASPL reads which walls it touches."],
+    [NEW[2], NEW[3], "Training pushes the output toward the best allowed answer (the ring)."],
+    [NEW[3], NEW[4], "ASPL: straight part passes, curved part shrinks, outward part stops. One small solve."],
+    [NEW[4], NEW[6], "The output glides along the curved wall to the best allowed answer, always allowed."],
   ];
   const stepsEl = document.getElementById("hero3d-steps");
   const stepText = stepsEl && stepsEl.querySelector(".h3d-step-text");
@@ -563,7 +560,7 @@
   function setOpacity(m, o) { m.opacity = o; m.visible = o > 0.003; }
   const tmp = V(), tmp2 = V();
   const labelPrev = {};
-  const OUTSIDE = { f: 1, blocked: 1, grad: 1 };
+  const OUTSIDE = { f: 1, blocked: 1 };
   let dtFrame = 0, lastT = null;
   function ptRectDist(px, py, R) {
     const dx = Math.max(R.x0 - px, 0, px - R.x1), dy = Math.max(R.y0 - py, 0, py - R.y1);
@@ -587,25 +584,28 @@
     return { x: (tmp.x * 0.5 + 0.5) * W, y: (-tmp.y * 0.5 + 0.5) * H };
   }
   function yAt(tc) {
-    // y follows the gradient-descent iterates, one eased hop per step; a hop's duration
-    // grows with its length, so long early hops do not flash past and late ones settle
+    // y follows the training iterates, one eased hop per step, along the wall's surface (angle and
+    // height interpolated, so it never cuts through the glass); the estimate moves with it
     const u = lin(13.4, 16.6, tc) * loss.cumT[NGD];
     let k = 0; while (k < NGD - 1 && loss.cumT[k + 1] <= u) k++;
-    const fr = Math.min((u - loss.cumT[k]) / (loss.cumT[k + 1] - loss.cumT[k]), 1);
-    return { y: loss.P[k].clone().lerp(loss.P[k + 1], ease(0, 1, fr)), s: k + fr };
+    const fr = Math.min((u - loss.cumT[k]) / (loss.cumT[k + 1] - loss.cumT[k]), 1), e = ease(0, 1, fr);
+    const th = loss.thP[k] + (loss.thP[k + 1] - loss.thP[k]) * e, yv = loss.P[k].y + (loss.P[k + 1].y - loss.P[k].y) * e;
+    const tf = loss.thF[k] + (loss.thF[k + 1] - loss.thF[k]) * e, rf = loss.rF[k] + (loss.rF[k + 1] - loss.rF[k]) * e, yf = loss.Pf[k].y + (loss.Pf[k + 1].y - loss.Pf[k].y) * e;
+    return { y: onWall(th, yv), f: V(rf * Math.cos(tf), yf, rf * Math.sin(tf)), s: k + fr };
   }
 
   function update(tc, T, tv) {
     narrate(tv);
     const appear = ease(0.3, 0.7, tc), out = 1 - ease(17.3, 17.9, tc);
-    const { y: yy, s: gs } = yAt(tc);
-    const fpt = yy.clone().addScaledVector(F.n, h);
+    const { y: yy, f: fpt, s: gs } = yAt(tc);
+    const thY = Math.atan2(yy.z, yy.x), uY = outAt(thY), eY = aroundAt(thY);
+    const hNow = Math.hypot(fpt.x, fpt.z) - R;
     fSphere.position.copy(fpt);
     // the estimate steps back while the push is split, then returns in step 5 and moves with
-    // the output (it stays y + h n, so its nearest allowed point is always the output)
+    // the output (its nearest allowed point is always the output)
     const fBack = ease(13.4, 14.0, tc);
     setOpacity(fSphere.material, appear * out * Math.max(1 - ease(6.7, 7.6, tc), 0.6 * fBack));
-    // step 2: solver iterates
+    // step 2: solver hops
     const u = lin(3.7, 5.6, tc);
     const drawK = (1 - Math.pow(1 - u, 1.35)) * (its.length - 1);
     segs.forEach((sg, k) => {
@@ -619,9 +619,9 @@
     { const k = Math.min(Math.floor(drawK), its.length - 2), fr = drawK - k;
       bead.position.copy(its[k]).lerp(its[k + 1], Math.min(fr, 1));
       setOpacity(bead.material, u > 0 && u < 1 ? 0.95 * out : 0); }
-    // the wall it touches, and the output on it
+    // the curved wall it touches, and the output on it
     const faceOn = ease(5.2, 5.7, tc) * out;
-    faceMat.opacity = (0.5 + 0.2 * ease(6.8, 7.6, tc)) * faceOn;
+    faceMat.opacity = (0.42 + 0.16 * ease(6.8, 7.6, tc)) * faceOn;
     faceMat.depthWrite = tc > 7.6 && tc < 17.3;
     setOpacity(edgeMat, faceOn);
     ySphere.position.copy(yy);
@@ -630,33 +630,41 @@
     setOpacity(ySphere.material, yOn);
     glow.material.opacity = 0.22 * yOn * (0.75 + 0.25 * Math.sin(T * 4));
     glow.visible = yOn > 0;
-    // straight, shortest line from the guess to the output (along the wall's normal)
+    // straight, shortest line from the estimate to the output (along the wall's outward normal)
     const resOn = out * Math.max(ease(5.8, 6.3, tc) * (1 - ease(6.7, 7.6, tc)), 0.8 * fBack);
     resDash.list.forEach(d => { d.visible = false; });
-    if (resOn > 0.01) dashLine(resDash, 0, yy.clone().addScaledVector(F.n, 0.06), fpt.clone().addScaledVector(F.n, -0.07), 0.045, 0.035);
+    if (resOn > 0.01) dashLine(resDash, 0, yy.clone().addScaledVector(uY, 0.06), fpt.clone().addScaledVector(uY, -0.07), 0.045, 0.035);
     resDash.m.opacity = 0.55 * resOn;
-    // step 3: score rings on the wall around the best point
+    // step 3: level sets on the wall around the best allowed answer
     const lossOn = ease(6.8, 7.5, tc) * out;
     contourMat.opacity = 0.34 * lossOn; contours.visible = lossOn > 0.01;
     setOpacity(ringMat, 0.9 * lossOn);
     { const k = lin(16.4, 17.2, tc), bump = k > 0 && k < 1 ? Math.sin(Math.PI * k) : 0; ring.scale.setScalar(1 + 0.9 * bump); }
-    // the training push at the output, then (step 4) its split into kept and removed parts
-    const g = gradL(yy).multiplyScalar(-loss.GS), gT = projT(g), gNv = g.clone().sub(gT);
-    const gOn = ease(7.7, 8.3, tc), split = ease(9.9, 10.4, tc), xOn = ease(11.9, 12.2, tc), cut = ease(12.5, 13.0, tc);
+    // the training push at the output, then (step 4) its three parts through the layer:
+    // along the axis it passes, around the curve it shrinks by R/(R+h), outward it stops
+    const g = V().subVectors(loss.t, yy).multiplyScalar(loss.GS);
+    const gAx = g.y, gAr = g.dot(eY), gOut = Math.max(g.dot(uY), 0), sR = R / (R + hNow);
+    const gOn = ease(7.7, 8.3, tc), split = ease(9.9, 10.4, tc), shrink = ease(10.7, 11.7, tc), xOn = ease(11.9, 12.2, tc), cut = ease(12.5, 13.0, tc);
+    const partsOff = 1 - ease(13.4, 13.9, tc);
     placeArrow(gArr, yy, g, g.length() * gOn + 1e-3);
     setOpacity(gArr.userData.m, Math.min(gOn * 1.5, 1) * (1 - 0.85 * split) * (1 - cut) * out);
-    placeArrow(passArr, yy, gT.lengthSq() > 1e-12 ? gT : F.t1, gT.length() * split + 1e-3);
-    passArr.userData.m.emissiveIntensity = 0.4 + 0.5 * split * (1 - ease(13.2, 13.8, tc)) * (0.5 + 0.5 * Math.sin(T * 5));
-    setOpacity(passArr.userData.m, Math.min(split * 1.5, 1) * out * (1 - ease(16.6, 17.2, tc)));
-    placeArrow(blockArr, yy, F.n, gNv.length() * split + 1e-3);
+    placeArrow(passArr, yy, gAx >= 0 ? UP : DOWN, Math.abs(gAx) * split + 1e-3);
+    passArr.userData.m.emissiveIntensity = 0.4 + 0.5 * split * (1 - ease(12.6, 13.2, tc)) * (0.5 + 0.5 * Math.sin(T * 5));
+    setOpacity(passArr.userData.m, Math.min(split * 1.5, 1) * out * partsOff);
+    const arcFull = Math.abs(gAr) * split, arcNow = arcFull * (1 - (1 - sR) * shrink);
+    placeArc(yy, gAr >= 0 ? 1 : -1, arcNow + 1e-3, arcFull);
+    arcMat.emissiveIntensity = 0.4 + 0.45 * Math.sin(Math.PI * shrink);
+    setOpacity(arcMat, Math.min(split * 1.5, 1) * out * partsOff);
+    ghostMat.opacity = 0.5 * Math.min(shrink * 2, 1) * out * partsOff; ghostRods.forEach(o => { o.visible = ghostMat.opacity > 0.003; });
+    placeArrow(blockArr, yy, uY, gOut * split + 1e-3);
     setOpacity(blockArr.userData.m, Math.min(split * 1.5, 1) * (1 - cut) * out);
-    // the removed part gets crossed out, then fades
-    cross.position.copy(yy).addScaledVector(F.n, 0.5 * gNv.length());
+    // the outward part gets crossed out, then fades
+    cross.position.copy(yy).addScaledVector(uY, 0.55 * gOut);
     qInv.copy(world.quaternion).invert();
     cross.quaternion.copy(qInv).multiply(camera.quaternion);
     cross.scale.setScalar(0.6 + 0.4 * xOn);
     crossMat.opacity = xOn * (1 - cut) * out; cross.visible = crossMat.opacity > 0.003;
-    // step 5: descent trail, older hops fade
+    // step 5: the trail along the wall, older hops fade
     trailSegs.forEach((sg, k) => {
       const part = Math.min(Math.max(gs - k, 0), 1);
       const age = gs - (k + 1);
@@ -669,7 +677,6 @@
     const W = host.clientWidth, H = host.clientHeight;
     const want = [];
     function put(name, p3, show, dx, dy, prio, more) {
-      // more: extra anchor points (screen), tried after the first at a small cost each
       const el = labels[name];
       if (!el) return;
       const a = toScreen(p3, W, H);
@@ -682,29 +689,26 @@
       put("f", fpt, out * Math.max(appear * (1 - ease(6.4, 6.9, tc)), fBack * (1 - ease(16.4, 16.9, tc))), 24 * ux, 24 * uy - 6, 1);
     }
     {
-      // the output keeps one name and one side for the whole cycle: across its direction of travel
-      // (off the kept part and the trail), on the side away from the removed part
-      const a2 = toScreen(yy, W, H), b2 = toScreen(tmp2.copy(yy).add(loss.travel), W, H), n2 = toScreen(tmp2.copy(yy).add(F.n), W, H);
+      // the output keeps one name and one side for the whole cycle: across its direction of travel,
+      // on the side away from the outward part
+      const a2 = toScreen(yy, W, H), b2 = toScreen(tmp2.copy(yy).add(loss.travel), W, H), n2 = toScreen(tmp2.copy(yy).add(uY), W, H);
       let ux = b2.x - a2.x, uy = b2.y - a2.y; const L = Math.hypot(ux, uy) || 1; ux /= L; uy /= L;
-      let px = -uy, py = ux;
+      const px = -uy, py = ux;
       const nx = n2.x - a2.x, ny = n2.y - a2.y, dn = (px * nx + py * ny) / (Math.hypot(nx, ny) || 1);
-      if (!sideMemo.y && yOn > 0.5 && Math.abs(dn) > 0.25) sideMemo.y = dn > 0 ? -1 : 1;  // decided once the output is on screen
+      if (!sideMemo.y && yOn > 0.5 && Math.abs(dn) > 0.25) sideMemo.y = dn > 0 ? -1 : 1;
       const sg = sideMemo.y || (dn > 0 ? -1 : 1);
-      // centre distance = the label's half-extent along that direction + a 16 px gap from the dot
       const lw = labels.y.offsetWidth + 4, lh = labels.y.offsetHeight, dd = Math.abs(px) * lw / 2 + Math.abs(py) * lh / 2 + 16;
       put("y", yy, yOn, dd * sg * px, dd * sg * py, 0);
     }
     put("face", faceLabelAt, faceOn * (1 - ease(7.6, 8.1, tc)), 0, 0, 3);
-    put("best", loss.ys, lossOn * lin(0.34, 0.52, yy.distanceTo(loss.ys)), 0, 16, 2);
-    // arrow labels sit beside the shaft, 65% of the way out: the push on the wall's side, kept and removed outside
-    // (the output's own label holds the wall's side for the whole cycle)
+    // the ring's label: in step 3 only (step 4 needs the room for its three parts; in step 5 the caption names it)
+    put("best", loss.ys, lossOn * (1 - ease(9.6, 9.9, tc)), 0, 16, 2);
     const wallC = toScreen(F.c, W, H);
     function beside(name, v, show, prio, toward) {
       const a2 = toScreen(yy, W, H), b2 = toScreen(yy.clone().add(v), W, H);
       let ux = b2.x - a2.x, uy = b2.y - a2.y; const L = Math.hypot(ux, uy) || 1; ux /= L; uy /= L;
       let px = -uy, py = ux;
       const mx = a2.x + 0.65 * (b2.x - a2.x), my = a2.y + 0.65 * (b2.y - a2.y);
-      // the side is decided once per cycle, so the label never swaps sides while the camera moves
       if (!sideMemo[name] && show > 0.04) sideMemo[name] = px * (mx - wallC.x) + py * (my - wallC.y) < 0 ? -1 : 1;
       const sgn = sideMemo[name] || 1;
       px *= toward ? -sgn : sgn; py *= toward ? -sgn : sgn;
@@ -712,16 +716,17 @@
       put(name, yy.clone().addScaledVector(v, 0.65), show, 12 * px, 12 * py, prio, along);
       want[want.length - 1].near = [a2, b2];
     }
-    // anchored to each arrow's full length, so the label does not chase the tip while the arrow grows
-    beside("grad", g, gOn * (1 - ease(9.9, 10.3, tc)) * out, 4, true);
-    beside("pass", gT, split * out * (1 - ease(13.4, 13.9, tc)) * Math.min(1, Math.max(0, (gT.length() - 0.1) / 0.15)), 5, false);
-    beside("blocked", F.n.clone().multiplyScalar(Math.max(gNv.length(), 0.05)), split * (1 - ease(12.5, 12.9, tc)) * out, 6, false);
-    put("C", V(0, -0.15, 0), appear * out * (1 - ease(3.0, 3.5, tc)), 0, 0, 7);
-    // obstacles on screen: the wall's edges, the arrows, the dashed residual, the points
+    const partsShow = split * out * partsOff;
+    beside("grad", g, gOn * (1 - ease(9.7, 9.95, tc)) * out, 4, true);
+    beside("pass", V(0, gAx || 0.05, 0), partsShow, 5, false);
+    beside("around", V().subVectors(arcEnd, yy), partsShow, 6, false);
+    beside("blocked", uY.clone().multiplyScalar(Math.max(gOut, 0.05)), split * (1 - ease(12.5, 12.9, tc)) * out, 7, false);
+    put("C", V(0, -0.1, 0), appear * out * (1 - ease(3.0, 3.5, tc)), 0, 0, 8);
+    // obstacles on screen: the patch's border, the arrows, the dashed residual, the points
     const segsS = [], ptsS = [];
-    if (faceOn > 0.1) { const wv = F.verts.map(v => toScreen(v, W, H)); wv.forEach((q, i) => segsS.push([q, wv[(i + 1) % wv.length], 6, 320, 1])); }
+    if (faceOn > 0.1) { const wv = F.verts.map(v => toScreen(v, W, H)); wv.forEach((q, i) => segsS.push([q, wv[(i + 1) % wv.length], 4, 40, 1])); }
     const yS = toScreen(yy, W, H);
-    // the shape's outline (convex hull of its projected corners): outside labels keep off it
+    // the shape's outline (convex hull of its projected rims): outside labels keep off it
     const hullS = [];
     if (FIXT !== null || want.some(a => OUTSIDE[a.name] && a.show > 0.04)) {
       const P = allVerts.map(v => toScreen(v, W, H)).sort((a, b) => a.x - b.x || a.y - b.y);
@@ -734,20 +739,26 @@
     }
     const addSeg = (p3, on) => { if (on > 0.15) segsS.push([yS, toScreen(p3, W, H), 3]); };
     addSeg(yy.clone().add(g), gArr.userData.m.opacity);
-    addSeg(yy.clone().add(gT), passArr.userData.m.opacity);
-    // from step 3 on, keep the kept part's path free even before it appears, so the output's label
-    // does not settle there and then have to jump away when the push is split
-    if (tc > 6.6) segsS.push([yS, toScreen(tmp2.copy(yy).add(gT), W, H), 8, 320]);
-    addSeg(yy.clone().addScaledVector(F.n, gNv.length()), blockArr.userData.m.opacity);
+    addSeg(yy.clone().add(V(0, gAx, 0)), passArr.userData.m.opacity);
+    if (arcMat.opacity > 0.15) {
+      // the arc as a short polyline
+      const th0 = thY, sg = gAr >= 0 ? 1 : -1;
+      let prevS = yS;
+      for (let k = 1; k <= 3; k++) { const s = toScreen(onWall(th0 + sg * arcFull * k / 3 / R, yy.y), W, H); segsS.push([prevS, s, 3]); prevS = s; }
+    }
+    // from step 3 on, keep the three parts' paths free before they appear, so labels do not have to jump
+    if (tc > 6.6) {
+      segsS.push([yS, toScreen(tmp2.copy(yy).add(V(0, gAx, 0)), W, H), 8, 320]);
+      segsS.push([yS, toScreen(onWall(thY + (gAr >= 0 ? 1 : -1) * Math.abs(gAr) / R, yy.y), W, H), 8, 320]);
+    }
+    addSeg(yy.clone().addScaledVector(uY, gOut), blockArr.userData.m.opacity);
     if (resOn > 0.15) segsS.push([yS, toScreen(fpt, W, H), 2]);
     if (itMat.opacity > 0.15) {
-      // the solver path and its iterates
       const n = Math.min(Math.ceil(drawK), its.length - 1);
       let prevS = toScreen(its[0], W, H);
       for (let k = 0; k < n; k++) { const s = toScreen(its[k + 1], W, H); segsS.push([prevS, s, 5]); prevS = s; }
     }
     if (gs > 0.05) {
-      // the descent trail behind the output
       let prevS = toScreen(loss.P[0], W, H);
       for (let k = 1; k <= Math.min(Math.ceil(gs), NGD); k++) { const s = toScreen(k < gs ? loss.P[k] : yy, W, H); segsS.push([prevS, s, 6]); prevS = s; }
     }
@@ -836,13 +847,13 @@
     dbg.labelsShown = want.filter(a => a.show > 0.3).map(a => a.name);
     if (DEBUG) dbg.anchors = Object.fromEntries(want.map(q => [q.name, [Math.round(q.ax), Math.round(q.ay)]]));
     if (FIXT !== null) {
-      // debug metrics: obliqueness of the wall, its screen polygon, content box, label boxes
-      const fcW = F.c.clone().applyMatrix4(world.matrixWorld), nW = F.n.clone().transformDirection(world.matrixWorld);
+      // debug metrics: obliqueness of the wall, its screen border, the split, content box, label boxes
+      const fcW = yy.clone().applyMatrix4(world.matrixWorld), nW = uY.clone().transformDirection(world.matrixWorld);
       dbg.viewCos = V().subVectors(camera.position, fcW).normalize().dot(nW);
       dbg.wall = F.verts.map(v => toScreen(v, W, H));
       {
         const fS = toScreen(fpt, W, H); let inside = true, dmin = Infinity;
-        const hp = hullS.map(h => h[0]);
+        const hp = hullS.map(hh => hh[0]);
         let area = 0; hp.forEach((q, i) => { const r = hp[(i + 1) % hp.length]; area += q.x * r.y - r.x * q.y; });
         hp.forEach((q, i) => {
           const r = hp[(i + 1) % hp.length], cr = (r.x - q.x) * (fS.y - q.y) - (r.y - q.y) * (fS.x - q.x);
@@ -853,24 +864,21 @@
         dbg.fOut = inside ? -dmin : dmin;
       }
       {
-        // the split on screen: angle between kept and removed, and whether removed leaves the wall's outline
+        // the split on screen: pixel lengths of the three parts and the angles between them
+        const pS = toScreen(yy.clone().add(V(0, gAx, 0)), W, H), aS = toScreen(arcEnd, W, H), oS = toScreen(yy.clone().addScaledVector(uY, gOut), W, H);
+        const ang = (p, q) => { const ax = p.x - yS.x, ay = p.y - yS.y, bx = q.x - yS.x, by = q.y - yS.y; return Math.acos(Math.max(-1, Math.min(1, (ax * bx + ay * by) / (Math.hypot(ax, ay) * Math.hypot(bx, by) + 1e-9)))) * 180 / Math.PI; };
+        dbg.split = { passPx: Math.hypot(pS.x - yS.x, pS.y - yS.y), aroundPx: Math.hypot(aS.x - yS.x, aS.y - yS.y), outPx: Math.hypot(oS.x - yS.x, oS.y - yS.y),
+          angPassAround: ang(pS, aS), angPassOut: ang(pS, oS), angAroundOut: ang(aS, oS), shrinkTo: sR };
         const inPoly = (p, poly) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a.y > p.y) !== (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) c = !c; } return c; };
-        const kS = toScreen(yy.clone().add(gT), W, H), rS = toScreen(yy.clone().addScaledVector(F.n, gNv.length()), W, H), gS = toScreen(yy.clone().add(g), W, H);
-        const ax = kS.x - yS.x, ay = kS.y - yS.y, bx = rS.x - yS.x, by = rS.y - yS.y;
-        dbg.splitAngle = Math.acos(Math.max(-1, Math.min(1, (ax * bx + ay * by) / (Math.hypot(ax, ay) * Math.hypot(bx, by) + 1e-9)))) * 180 / Math.PI;
-        dbg.removedPx = Math.hypot(bx, by);
-        dbg.removedTipOutside = !inPoly(rS, dbg.wall);
-        dbg.pushTipOutside = !inPoly(gS, dbg.wall);
-        // where the shape is cut by the box: length of each box edge that lies inside the shape's outline
-        const hp = hullS.length ? hullS.map(h => h[0]) : null;
+        const hp = hullS.length ? hullS.map(hh => hh[0]) : null;
         if (hp) {
-          const cut = { top: 0, bottom: 0, left: 0, right: 0 };
-          for (let x = 0; x <= W; x += 2) { if (inPoly({ x, y: 0.5 }, hp)) cut.top += 2; if (inPoly({ x, y: H - 0.5 }, hp)) cut.bottom += 2; }
-          for (let y = 0; y <= H; y += 2) { if (inPoly({ x: 0.5, y }, hp)) cut.left += 2; if (inPoly({ x: W - 0.5, y }, hp)) cut.right += 2; }
-          dbg.cut = cut;
+          const cutc = { top: 0, bottom: 0, left: 0, right: 0 };
+          for (let x = 0; x <= W; x += 2) { if (inPoly({ x, y: 0.5 }, hp)) cutc.top += 2; if (inPoly({ x, y: H - 0.5 }, hp)) cutc.bottom += 2; }
+          for (let y = 0; y <= H; y += 2) { if (inPoly({ x: 0.5, y }, hp)) cutc.left += 2; if (inPoly({ x: W - 0.5, y }, hp)) cutc.right += 2; }
+          dbg.cut = cutc;
         }
       }
-      const pts = geo.userData.polys.flatMap(P => P.verts).map(v => toScreen(v, W, H));
+      const pts = allVerts.map(v => toScreen(v, W, H));
       if (fSphere.material.opacity > 0.05) pts.push(toScreen(fpt, W, H));
       pts.push(toScreen(yy, W, H));
       if (gOn > 0.05) pts.push(toScreen(yy.clone().add(g), W, H));
@@ -881,7 +889,6 @@
       dbg.labelBoxes = want.filter(a => a.show > 0.3).map(a => { const r = a.el.getBoundingClientRect(); return { name: a.name, x0: r.left - hb.left, y0: r.top - hb.top, x1: r.right - hb.left, y1: r.bottom - hb.top, color: getComputedStyle(a.el).color }; });
     }
   }
-
   // ---------- interaction: drag to rotate ----------
   let dragging = false, px = 0, py = 0, yawUser = 0, pitchUser = 0;
   const el = renderer.domElement;
@@ -902,7 +909,7 @@
   // the figure is off-screen, the tab is hidden, the viewer has paused it, or the context is lost.
   const prm = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   const reduce = FIXT !== null || prm;
-  const PRM_T = 14.3;  // reduced motion: a still of step 4, both parts of the push shown, the removed one crossed out
+  const PRM_T = 13.2;  // reduced motion: a still of step 4, the three parts shown, the curved one shrunk, the outward one crossed out
   if (prm && stepsEl) {
     stepsEl.classList.add("all");
     stepText.innerHTML = "<ol>" + STEPS.map(s => `<li>${s[2]}</li>`).join("") + "</ol>";
@@ -912,9 +919,8 @@
   let qStart = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.18, -0.35, 0)), qTarget = qStart.clone();
   const qBase = new THREE.Quaternion(), qUser = new THREE.Quaternion(), qSway = new THREE.Quaternion(), eul = new THREE.Euler();
   const CAM_POS = camera.position.clone(), CAM_LOOK = V(0, -0.08, 0), camTarget = CAM_LOOK.clone();
-  // the close-up looks at the wall 40 degrees off its normal; while the push is split it tilts to
-  // 60 degrees, so the part across the wall visibly stands out of it
-  const TILT_A = 0.70, TILT_B = 1.05, FIT = 1.3, AIM_X = 0.28, AIM_Y = 0.12, keyC = V(), kp = V(), camDir = V(), camRight = V(), camUp = V(), aim = V();
+  // the close-up: camera direction from the output = outward + CAM_SIDE * around + CAM_UP * up
+  const CAM_SIDE = 0.9, CAM_UP = 0.8, FIT = 1.3, AIM_X = 0.28, AIM_Y = 0.12, keyC = V(), keyC2 = V(), kp = V(), camDir = V(), camRight = V(), camUp = V(), aim = V();
   function draw() {
     if (ctxLost) return;
     dbg.frames = (dbg.frames || 0) + 1;
@@ -937,17 +943,26 @@
     const zoom = ease(3.6, 6.2, tc) * (1 - ease(16.6, 17.9, tc));
     const fc = F.c.clone().applyMatrix4(world.matrixWorld);
     const nW = F.n.clone().transformDirection(world.matrixWorld);
-    // tilt within the plane spanned by n and (n x kept direction): the kept part keeps its full
-    // length on screen and the removed part appears at a right angle to it
-    const side = loss.side.clone().transformDirection(world.matrixWorld);
-    if (side.x > 0) side.negate();
-    const tilt = TILT_A + (TILT_B - TILT_A) * ease(6.9, 8.0, tc) * (1 - ease(13.3, 14.3, tc));
-    camDir.copy(nW).multiplyScalar(Math.cos(tilt)).addScaledVector(side, Math.sin(tilt)).normalize();
+    // look from the diagonal of the three directions at the output (outward, around toward the
+    // arc, up): they then appear about 120 degrees apart and equally long, and the wall is seen
+    // 55 degrees off its normal, so its curve and the contours read
+    const side = loss.side.clone().transformDirection(world.matrixWorld), upW = UP.clone().transformDirection(world.matrixWorld);
+    camDir.copy(nW).addScaledVector(side, CAM_SIDE).addScaledVector(upW, CAM_UP).normalize();
     // fit: centre of the key points' bounding sphere, distance so the sphere fills the view
-    keyC.set(0, 0, 0);
-    loss.key.forEach(p => keyC.add(kp.copy(p).applyMatrix4(world.matrixWorld)));
-    keyC.multiplyScalar(1 / loss.key.length);
-    let R = 0; loss.key.forEach(p => { R = Math.max(R, kp.copy(p).applyMatrix4(world.matrixWorld).distanceTo(keyC)); });
+    // the patch view, blended into a tighter view of the output while the push is shown and split
+    const fitOf = (keys, c) => {
+      c.set(0, 0, 0);
+      keys.forEach(p => c.add(kp.copy(p).applyMatrix4(world.matrixWorld)));
+      c.multiplyScalar(1 / keys.length);
+      let r = 0; keys.forEach(p => { r = Math.max(r, kp.copy(p).applyMatrix4(world.matrixWorld).distanceTo(c)); });
+      return r;
+    };
+    const wP = ease(7.0, 8.2, tc) * (1 - ease(13.2, 14.4, tc)), wX = ease(9.7, 10.5, tc) * (1 - ease(13.2, 14.4, tc));
+    const rA = fitOf(loss.key, keyC), rP = fitOf(loss.keyPush, keyC2);
+    keyC.lerp(keyC2, wP);
+    const rX = fitOf(loss.keySplit, keyC2);
+    keyC.lerp(keyC2, wX);
+    const R = (rA + (rP - rA) * wP) * (1 - wX) + rX * wX;
     const halfFov = Math.min(camera.fov, 2 * Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect) * 180 / Math.PI) * Math.PI / 360;
     const D = FIT * R / Math.sin(halfFov);
     // aim a little left of and below the key points on wide boxes: the shape's body fills the left,
