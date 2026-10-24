@@ -4,15 +4,20 @@
 // drawn as level sets on the face; its descent direction -grad L splits into an in-face part,
 // which the layer passes back, and a normal part, which it blocks. Training then moves y
 // (and f with it) down the loss along the face. Cycles over faces; drag to rotate.
-// Debug: ?t=8.2 freezes the timeline, ?seed=N fixes the random choices.
+// Debug: ?t=8.2 freezes the timeline, ?seed=N fixes the random choices, ?debug runs the numeric checks.
 (function () {
   const host = document.getElementById("hero3d");
   if (!host || !window.THREE) return;
   const qs = new URLSearchParams(location.search);
-  let FIXT = qs.has("t") ? parseFloat(qs.get("t")) : null;
+  const tq = qs.has("t") ? parseFloat(qs.get("t")) : NaN;
+  let FIXT = Number.isFinite(tq) ? Math.min(Math.max(tq, 0), 240) : null;
   const PERF = qs.has("perf");
+  const DEBUG = FIXT !== null || PERF || qs.has("debug");
+  const dbg = window.__heroDebug = {};
   let seed = qs.has("seed") ? (parseInt(qs.get("seed"), 10) >>> 0) || 1 : null;
   const rand = seed === null ? Math.random : () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  // no WebGL at all: keep the SVG fallback and stay quiet
+  { const c = document.createElement("canvas"); let ok = false; try { const gl = window.WebGLRenderingContext && (c.getContext("webgl2") || c.getContext("webgl")); ok = !!gl; if (gl) { const x = gl.getExtension("WEBGL_lose_context"); if (x) x.loseContext(); } } catch (e) {} if (!ok) return; }
   let renderer;
   try {
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: FIXT !== null });
@@ -28,8 +33,9 @@
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 50);
   camera.position.set(0, 0.8, 5.45);
   camera.lookAt(0, -0.08, 0);
-  // soft studio environment (a gradient dome with two light panels) for glassy reflections
-  {
+  // soft studio environment (a gradient dome with two light panels) for glassy reflections;
+  // rebuilt after a lost WebGL context, since the prefiltered map lives only on the GPU
+  const envScene = (() => {
     const env = new THREE.Scene();
     const dome = new THREE.SphereGeometry(10, 32, 16);
     const col = [];
@@ -44,13 +50,22 @@
       const m = new THREE.Mesh(new THREE.PlaneGeometry(s, s), new THREE.MeshBasicMaterial({ color: 0xdce7f7, side: THREE.DoubleSide }));
       m.position.copy(p); m.lookAt(0, 0, 0); env.add(m);
     });
+    return env;
+  })();
+  let envRT = null;
+  function buildEnv(fresh) {
+    // after a lost context the old map's GL objects are gone: drop it rather than dispose it
     const pm = new THREE.PMREMGenerator(renderer);
-    scene.environment = pm.fromScene(env, 0.02).texture;
+    if (envRT && !fresh) envRT.dispose();
+    envRT = pm.fromScene(envScene, 0.02);
+    scene.environment = envRT.texture;
     pm.dispose();
+    dbg.envBuilds = (dbg.envBuilds || 0) + 1;
   }
+  buildEnv();
   scene.fog = new THREE.Fog(0xdde9fb, 4.7, 8.6); // far edges and glass fade into the page: depth cue
   scene.add(new THREE.HemisphereLight(0xffffff, 0xbcd3f2, 0.55));
-  const sun = new THREE.DirectionalLight(0xffffff, 0.6);
+  const sun = new THREE.DirectionalLight(0xffffff, 0.75);
   sun.position.set(3, 5, 4);
   scene.add(sun);
   const rim = new THREE.DirectionalLight(0xbfdbfe, 0.7);
@@ -105,17 +120,34 @@
     g.userData.polys = polys;
     return g;
   })();
-  const glass = { color: 0x6fa2ec, roughness: 0.34, metalness: 0, clearcoat: 0.55, clearcoatRoughness: 0.18,
-    envMapIntensity: 0.55, flatShading: true, transparent: true, depthWrite: false };
-  const inner = new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial(Object.assign({}, glass, { side: THREE.BackSide, opacity: 0.36, color: 0x4a84dc })));
-  const shell = new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial(Object.assign({}, glass, { side: THREE.FrontSide, opacity: 0.34 })));
-  inner.renderOrder = 0; shell.renderOrder = 2;
-  world.add(inner, shell);
+  const glass = { color: 0x7aaaf0, roughness: 0.2, metalness: 0, clearcoat: 0.85, clearcoatRoughness: 0.08,
+    envMapIntensity: 0.7, flatShading: true, transparent: true, depthWrite: false };
+  const inner = new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial(Object.assign({}, glass, { side: THREE.BackSide, opacity: 0.3, color: 0x5b90e0 })));
+  const shell = new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial(Object.assign({}, glass, { side: THREE.FrontSide, opacity: 0.28 })));
+  // fresnel rim: glass brightens where it turns away from the viewer
+  const rimMesh = new THREE.Mesh(geo, new THREE.ShaderMaterial({
+    uniforms: { k: { value: 0.5 } },
+    vertexShader: "varying vec3 vN; varying vec3 vV; void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }",
+    fragmentShader: "uniform float k; varying vec3 vN; varying vec3 vV; void main(){ float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.4); gl_FragColor = vec4(1.0, 1.0, 1.0, k * f); }",
+    transparent: true, depthWrite: false, side: THREE.FrontSide
+  }));
+  inner.renderOrder = 0; shell.renderOrder = 2; rimMesh.renderOrder = 2.2;
+  world.add(inner, shell, rimMesh);
+  // one shared unit cylinder, scaled per rod, so per-cycle rods allocate no GPU buffers
+  const rodGeo = new THREE.CylinderGeometry(1, 1, 1, 8);
+  function rodMesh(a, b, r, m) {
+    const d = V().subVectors(b, a), L = d.length();
+    const o = new THREE.Mesh(rodGeo, m);
+    o.position.copy(a).addScaledVector(d, 0.5);
+    o.quaternion.setFromUnitVectors(V(0, 1, 0), d.normalize());
+    o.scale.set(r, L, r);
+    return o;
+  }
   {
-    // edges of the twelve main faces read strongly; the bevel seams stay faint
+    // edges of the twelve main faces read lightly; the bevel seams stay fainter
     const eg = new THREE.EdgesGeometry(geo, 1).attributes.position;
-    const em = new THREE.MeshBasicMaterial({ color: NAVY, transparent: true, opacity: 0.7 });
-    const emSoft = new THREE.MeshBasicMaterial({ color: NAVY, transparent: true, opacity: 0.5 });
+    const em = new THREE.MeshBasicMaterial({ color: 0x1e40af, transparent: true, opacity: 0.42 });
+    const emSoft = new THREE.MeshBasicMaterial({ color: 0x1e40af, transparent: true, opacity: 0.2 });
     const polys = geo.userData.polys;
     const area = P => P.verts.reduce((s, v, i) => s + V().subVectors(v, P.verts[0]).cross(V().subVectors(P.verts[(i + 1) % P.verts.length], P.verts[0])).length() / 2, 0);
     polys.forEach(P => { P.area = area(P); });
@@ -123,20 +155,20 @@
     for (let i = 0; i < eg.count; i += 2) {
       const a = V().fromBufferAttribute(eg, i), b = V().fromBufferAttribute(eg, i + 1), d = V().subVectors(b, a);
       const main = polys.some(P => P.area > 0.5 * aMax && Math.abs(P.n.dot(a) - P.d) < 1e-6 && Math.abs(P.n.dot(b) - P.d) < 1e-6);
-      const r = new THREE.Mesh(new THREE.CylinderGeometry(main ? 0.0068 : 0.0052, main ? 0.0068 : 0.0052, d.length(), 6), main ? em : emSoft);
-      r.position.copy(a).addScaledVector(d, 0.5);
-      r.quaternion.setFromUnitVectors(V(0, 1, 0), d.normalize());
+      const r = rodMesh(a, b, main ? 0.0046 : 0.0034, main ? em : emSoft);
       r.renderOrder = 3;
       world.add(r);
     }
   }
   // soft contact shadow on an invisible floor
+  let shadowTex = null;
   {
     const cv = document.createElement("canvas"); cv.width = cv.height = 128;
     const cx = cv.getContext("2d"), gr = cx.createRadialGradient(64, 64, 0, 64, 64, 64);
     gr.addColorStop(0, "rgba(30,58,138,0.55)"); gr.addColorStop(0.55, "rgba(30,58,138,0.16)"); gr.addColorStop(1, "rgba(30,58,138,0)");
     cx.fillStyle = gr; cx.fillRect(0, 0, 128, 128);
-    const sh = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 3.4), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false }));
+    shadowTex = new THREE.CanvasTexture(cv);
+    const sh = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 3.4), new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false }));
     sh.rotation.x = -Math.PI / 2; sh.position.set(-0.32, -1.3, 0); sh.scale.set(0.9, 0.62, 1);
     scene.add(sh);
   }
@@ -193,18 +225,11 @@
     fadeMats.push(m);
     return m;
   }
-  function rod(a, b, r, m) {
-    const d = V().subVectors(b, a), L = d.length();
-    const o = new THREE.Mesh(new THREE.CylinderGeometry(r, r, L, 10), m);
-    o.position.copy(a).addScaledVector(d, 0.5);
-    o.quaternion.setFromUnitVectors(V(0, 1, 0), d.clone().normalize());
-    return o;
-  }
-  function arrow(color) {
+  function arrow(color, r, hr) {
     const m = mat(color, { emissive: color, emissiveIntensity: 0.4 });
     const g = new THREE.Group();
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1, 10), m);
-    const head = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.14, 14), m);
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(r || 0.018, r || 0.018, 1, 10), m);
+    const head = new THREE.Mesh(new THREE.ConeGeometry(hr || 0.055, 0.14, 14), m);
     g.add(shaft, head);
     g.userData = { shaft, head, m };
     world.add(g);
@@ -223,7 +248,7 @@
   }
 
   // ---------- per-cycle objects ----------
-  const faceMat = new THREE.MeshBasicMaterial({ color: 0xfdba74, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false });
+  const faceMat = new THREE.MeshBasicMaterial({ color: 0xfbbf8a, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false });
   const edgeMat = mat(ORANGE, { emissive: 0xc2410c, emissiveIntensity: 0.55 });
   let faceMesh = null, faceEdges = null;
   const fSphere = new THREE.Mesh(new THREE.SphereGeometry(0.075, 24, 16), mat(NAVY, { emissive: 0x1e3a8a, emissiveIntensity: 0.3 }));
@@ -248,19 +273,18 @@
     }
     return k;
   }
-  const resDash = dashPool(18, NAVY), splitDash = dashPool(28, NAVY);
-  const cornerMat = new THREE.MeshBasicMaterial({ color: NAVY, transparent: true, opacity: 0, depthWrite: false });
-  const cornerGeo = new THREE.CylinderGeometry(0.011, 0.011, 1, 6); cornerGeo.translate(0, 0.5, 0);
-  const corner = [0, 1].map(() => { const m = new THREE.Mesh(cornerGeo, cornerMat); m.renderOrder = 4; world.add(m); return m; });
-  // solver path: one tube per Dykstra step, revealed in order, with a bead running along it
-  const itMat = mat(0x3b82f6, { emissive: 0x2563eb, emissiveIntensity: 0.5 });
-  const dotMat = mat(0xe0edff, { emissive: 0x93c5fd, emissiveIntensity: 0.6 });
+  const resDash = dashPool(18, NAVY);
+  // solver path: one navy tube per Dykstra step, revealed in order, a dot at each iterate,
+  // and a bead running along it
+  const itMat = new THREE.MeshBasicMaterial({ color: NAVY, transparent: true, opacity: 0, depthWrite: false });
+  const dotMat = new THREE.MeshBasicMaterial({ color: NAVY, transparent: true, opacity: 0, depthWrite: false });
   const MAXIT = 16;
-  const segGeo = new THREE.CylinderGeometry(0.011, 0.011, 1, 8); segGeo.translate(0, 0.5, 0);
+  const segGeo = new THREE.CylinderGeometry(0.017, 0.017, 1, 8); segGeo.translate(0, 0.5, 0);
+  const dotGeo = new THREE.SphereGeometry(0.027, 14, 10);
   const segs = [], dots = [];
   for (let k = 0; k < MAXIT; k++) {
     const sg = new THREE.Mesh(segGeo, itMat); sg.renderOrder = 4; segs.push(sg); world.add(sg);
-    const d = new THREE.Mesh(new THREE.SphereGeometry(0.026, 14, 10), dotMat); d.renderOrder = 4; dots.push(d); world.add(d);
+    const d = new THREE.Mesh(dotGeo, dotMat); d.renderOrder = 4; dots.push(d); world.add(d);
   }
   const bead = new THREE.Mesh(new THREE.SphereGeometry(0.04, 18, 12), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0 }));
   bead.renderOrder = 5; world.add(bead);
@@ -272,9 +296,17 @@
   const ringDot = new THREE.Mesh(new THREE.SphereGeometry(0.02, 12, 8), ringMat);
   ring.renderOrder = ringDot.renderOrder = 4; world.add(ring, ringDot);
   // descent direction -grad L at y and its split into the passed (in-face) and blocked (normal) parts
-  const SLATE = 0x334155, GREY = 0x94a3b8;
-  const gArr = arrow(SLATE), passArr = arrow(BLUE), blockArr = arrow(0x64748b);
-  const blockCol0 = new THREE.Color(0x64748b), blockCol1 = new THREE.Color(0xcbd5e1);
+  const SLATE = 0x334155, RED = 0xdc2626;
+  const gArr = arrow(SLATE), passArr = arrow(0x1d4ed8, 0.028, 0.07), blockArr = arrow(RED);
+  // a red cross on the removed part, always facing the viewer
+  const crossMat = new THREE.MeshBasicMaterial({ color: RED, transparent: true, opacity: 0, depthWrite: false, depthTest: false });
+  const cross = new THREE.Group();
+  [Math.PI / 4, -Math.PI / 4].forEach(a => {
+    const b = new THREE.Mesh(rodGeo, crossMat); b.scale.set(0.014, 0.17, 0.014); b.rotation.z = a; cross.add(b);
+  });
+  cross.renderOrder = 6; cross.children.forEach(c => { c.renderOrder = 6; });
+  world.add(cross);
+  const qInv = new THREE.Quaternion();
   // gradient-descent trail on the face, older steps fade
   const NGD = 14;
   const trailSegs = [], trailDots = [];
@@ -307,6 +339,9 @@
   }
   const labels = {};
   host.querySelectorAll("[data-label]").forEach(el => { labels[el.dataset.label] = el; });
+  const leader = document.createElement("i");
+  leader.className = "h3d-leader"; leader.setAttribute("aria-hidden", "true");
+  host.appendChild(leader);
 
   // the chosen face is turned so its outward normal points here (world frame):
   // toward the camera, to the right and slightly up, so f(x) floats in open space.
@@ -323,7 +358,7 @@
     lastFace = pool[Math.floor(rand() * pool.length)];
     return lastFace;
   }
-  const dbg = window.__heroDebug = {};
+  const sideMemo = {};
   function newCycle(q0) {
     const fi = pickFace(q0);
     F = faces[fi];
@@ -340,8 +375,9 @@
     faceMesh.renderOrder = 2.5;
     world.add(faceMesh);
     faceEdges = new THREE.Group();
-    F.verts.forEach((v, i) => faceEdges.add(rod(v, F.verts[(i + 1) % F.verts.length], 0.022, edgeMat)));
+    F.verts.forEach((v, i) => faceEdges.add(rodMesh(v, F.verts[(i + 1) % F.verts.length], 0.02, edgeMat)));
     world.add(faceEdges);
+    for (const k in sideMemo) delete sideMemo[k];
 
     // y0: interior point shifted toward one edge, so f also violates the neighbouring face
     // and the solver has to zig-zag between the two before settling on the tight face.
@@ -372,7 +408,13 @@
       const a = its[k], b = its[k + 1], d = V().subVectors(b, a);
       sg.position.copy(a); sg.quaternion.setFromUnitVectors(V(0, 1, 0), d.clone().normalize()); sg.userData.L = d.length();
     });
-    dots.forEach((d, k) => { d.userData.on = k + 1 < its.length - 1; if (d.userData.on) d.position.copy(its[k + 1]); });
+    // a dot per iterate, skipping ones that crowd the output or the previous dot
+    let lastDot = its[0];
+    dots.forEach((d, k) => {
+      const p = its[k + 1];
+      d.userData.on = k + 1 < its.length - 1 && p.distanceTo(y0) > 0.11 && p.distanceTo(lastDot) > 0.07;
+      if (d.userData.on) { d.position.copy(p); lastDot = p; }
+    });
     freeB = V().crossVectors(F.n, V().subVectors(F.c, y0).normalize()).normalize();
     if (freeB.clone().applyQuaternion(q).x < 0) freeB.negate();
 
@@ -404,6 +446,8 @@
     loss = pick || fallback;
     if (!loss.P) loss.P = gdPath();
     loss.gT0 = projT(gradL(y0)).length();
+    // the output's direction of travel during training (its label sits across it)
+    loss.travel = V().subVectors(loss.P[NGD], loss.P[0]).normalize().multiplyScalar(0.3);
     loss.GS = 0.48 / loss.gT0;
     loss.side = V().crossVectors(F.n, projT(gradL(y0)).normalize()).normalize();               // display scale: the in-face part is drawn 0.48 long
     loss.L = loss.P.map(p => lossVal(p));
@@ -446,7 +490,8 @@
     F.verts.forEach(v => { const d = v.distanceTo(fpt); if (d > fd) { fd = d; far = v; } });
     faceLabelAt = far.clone().addScaledVector(V().subVectors(far, F.c).normalize(), 0.12);
 
-    // numerical checks
+    // numerical checks (debug visits only: ?t=, ?perf, ?debug)
+    if (!DEBUG) return q;
     const yStar = dykstra(fpt, order, 400, false);
     let projErrPath = 0, passDotN = 0, maxRise = -1e9;
     loss.P.forEach((p, k) => {
@@ -466,43 +511,57 @@
     return q;
   }
 
-  // ---------- timeline (seconds within a cycle): five narrated steps ----------
-  // the animation is scripted on an 18 s clock (OLD); the viewer's cycle is 20 s (NEW), with the
-  // extra time given to the longer sentences. warp() maps viewer time to script time per step.
-  const OLD = [0, 3.4, 6.6, 9.8, 13.2, 18.0], NEW = [0, 3.6, 7.0, 10.4, 15.0, 20.0];
-  const CYCLE = NEW[5];
+  // ---------- timeline (seconds within a cycle): five narrated steps, then a short hold ----------
+  // the animation is scripted on its own clock (OLD); the viewer's clock (NEW) gives each step
+  // time to read its sentence, and holds the wide shot before the loop restarts.
+  const OLD = [0, 3.4, 6.6, 9.8, 13.2, 18.0, 18.8], NEW = [0, 3.6, 7.2, 10.6, 15.6, 20.6, 21.4];
+  const CYCLE = NEW[6];
   function warp(t) {
-    let k = 0; while (k < 4 && t >= NEW[k + 1]) k++;
+    let k = 0; while (k < 5 && t >= NEW[k + 1]) k++;
     return OLD[k] + (t - NEW[k]) * (OLD[k + 1] - OLD[k]) / (NEW[k + 1] - NEW[k]);
   }
   const STEPS = [
     [NEW[0], NEW[1], "The neural network makes an estimate, outside the allowed region."],
-    [NEW[1], NEW[2], "ASPL searches, step by step, for the nearest allowed point."],
-    [NEW[2], NEW[3], "Training pushes the output, partly out of the allowed region."],
-    [NEW[3], NEW[4], "ASPL keeps the part along the wall and removes the part that leaves the region."],
-    [NEW[4], NEW[5], "The output slides along the wall to a better answer, and stays allowed."],
+    [NEW[1], NEW[2], "A standard solver zig-zags to the nearest allowed point; ASPL notes which wall it lands on."],
+    [NEW[2], NEW[3], "Training pushes the output toward the best allowed answer (the ring), partly across the wall."],
+    [NEW[3], NEW[4], "ASPL keeps the part along the wall and removes the part across it, with one small exact solve."],
+    [NEW[4], NEW[6], "The output slides along the wall toward the best allowed answer; the estimate moves with it."],
   ];
   const stepsEl = document.getElementById("hero3d-steps");
   const stepText = stepsEl && stepsEl.querySelector(".h3d-step-text");
   const stepDots = stepsEl ? [...stepsEl.querySelectorAll(".h3d-dots i")] : [];
-  let shownStep = -1;
+  // two stacked layers: the outgoing sentence fades out while the incoming one fades in
+  const layers = stepText ? [0, 1].map(() => { const s = document.createElement("span"); stepText.appendChild(s); return s; }) : [];
+  let shownStep = -1, layer = 0;
+  const stepHTML = k => `<b>${k + 1}</b>${STEPS[k][2]}`;
+  function reserveCaption() {
+    // reserve the tallest sentence's height, so the buttons below never move
+    if (!stepText || stepsEl.classList.contains("all")) return;
+    const s = layers[1 - layer], keep = s.innerHTML, op = s.style.opacity;
+    s.style.opacity = 0;
+    let hMax = 0;
+    STEPS.forEach((_, k) => { s.innerHTML = stepHTML(k); hMax = Math.max(hMax, s.offsetHeight); });
+    s.innerHTML = keep; s.style.opacity = op;
+    stepText.style.minHeight = hMax + "px";
+  }
   function narrate(tc) {
     if (!stepText || stepsEl.classList.contains("all")) return;
     let k = STEPS.findIndex(s => tc >= s[0] && tc < s[1]);
     if (k < 0) k = STEPS.length - 1;
     if (k !== shownStep) {
       shownStep = k;
-      stepText.innerHTML = `<b>${k + 1}</b>${STEPS[k][2]}`;
+      layer = 1 - layer;
+      layers[layer].innerHTML = stepHTML(k);
+      layers[layer].style.opacity = 1;
+      layers[1 - layer].style.opacity = 0;
       stepDots.forEach((d, i) => { d.className = i === k ? "on" : i < k ? "done" : ""; });
     }
-    const [a, b] = STEPS[k];
-    stepText.style.opacity = Math.min(1, (tc - a) / 0.35, (b - tc) / 0.3, 1);
     dbg.step = k + 1;
   }
   const ease = (a, b, t) => { const u = Math.min(Math.max((t - a) / (b - a), 0), 1); return u * u * (3 - 2 * u); };
   const lin = (a, b, t) => Math.min(Math.max((t - a) / (b - a), 0), 1);
   function setOpacity(m, o) { m.opacity = o; m.visible = o > 0.003; }
-  const tmp = V();
+  const tmp = V(), tmp2 = V();
   const labelPrev = {};
   const OUTSIDE = { f: 1, blocked: 1, grad: 1 };
   let dtFrame = 0, lastT = null;
@@ -538,13 +597,14 @@
 
   function update(tc, T, tv) {
     narrate(tv);
-    const appear = ease(1.0, 1.5, tc), out = 1 - ease(17.3, 17.9, tc);
+    const appear = ease(0.3, 0.7, tc), out = 1 - ease(17.3, 17.9, tc);
     const { y: yy, s: gs } = yAt(tc);
     const fpt = yy.clone().addScaledVector(F.n, h);
     fSphere.position.copy(fpt);
-    // the estimate leaves once training starts: from step 3 on the output is the subject
-    const guessBack = 1 - ease(6.7, 7.6, tc);
-    setOpacity(fSphere.material, appear * out * guessBack);
+    // the estimate steps back while the push is split, then returns in step 5 and moves with
+    // the output (it stays y + h n, so its nearest allowed point is always the output)
+    const fBack = ease(13.4, 14.0, tc);
+    setOpacity(fSphere.material, appear * out * Math.max(1 - ease(6.7, 7.6, tc), 0.6 * fBack));
     // step 2: solver iterates
     const u = lin(3.7, 5.6, tc);
     const drawK = (1 - Math.pow(1 - u, 1.35)) * (its.length - 1);
@@ -553,15 +613,15 @@
       sg.visible = sg.userData.on && part > 0;
       if (sg.visible) sg.scale.set(1, sg.userData.L * part, 1);
     });
-    dots.forEach(d => { d.visible = false; });
     const fadeIt = out * (1 - ease(5.9, 6.6, tc));
-    setOpacity(itMat, 0.9 * fadeIt); setOpacity(dotMat, fadeIt);
+    setOpacity(itMat, 0.85 * fadeIt); setOpacity(dotMat, 0.9 * fadeIt);
+    dots.forEach((d, k) => { d.visible = d.userData.on && drawK >= k + 1 && fadeIt > 0.003; });
     { const k = Math.min(Math.floor(drawK), its.length - 2), fr = drawK - k;
       bead.position.copy(its[k]).lerp(its[k + 1], Math.min(fr, 1));
       setOpacity(bead.material, u > 0 && u < 1 ? 0.95 * out : 0); }
     // the wall it touches, and the output on it
     const faceOn = ease(5.2, 5.7, tc) * out;
-    faceMat.opacity = (0.62 + 0.28 * ease(6.8, 7.6, tc)) * faceOn;
+    faceMat.opacity = (0.5 + 0.2 * ease(6.8, 7.6, tc)) * faceOn;
     faceMat.depthWrite = tc > 7.6 && tc < 17.3;
     setOpacity(edgeMat, faceOn);
     ySphere.position.copy(yy);
@@ -571,11 +631,10 @@
     glow.material.opacity = 0.22 * yOn * (0.75 + 0.25 * Math.sin(T * 4));
     glow.visible = yOn > 0;
     // straight, shortest line from the guess to the output (along the wall's normal)
-    const resOn = ease(5.8, 6.3, tc) * out * (1 - ease(6.7, 7.6, tc));
+    const resOn = out * Math.max(ease(5.8, 6.3, tc) * (1 - ease(6.7, 7.6, tc)), 0.8 * fBack);
     resDash.list.forEach(d => { d.visible = false; });
     if (resOn > 0.01) dashLine(resDash, 0, yy.clone().addScaledVector(F.n, 0.06), fpt.clone().addScaledVector(F.n, -0.07), 0.045, 0.035);
     resDash.m.opacity = 0.55 * resOn;
-    corner.forEach(c => { c.visible = false; });
     // step 3: score rings on the wall around the best point
     const lossOn = ease(6.8, 7.5, tc) * out;
     contourMat.opacity = 0.34 * lossOn; contours.visible = lossOn > 0.01;
@@ -583,22 +642,20 @@
     { const k = lin(16.4, 17.2, tc), bump = k > 0 && k < 1 ? Math.sin(Math.PI * k) : 0; ring.scale.setScalar(1 + 0.9 * bump); }
     // the training push at the output, then (step 4) its split into kept and removed parts
     const g = gradL(yy).multiplyScalar(-loss.GS), gT = projT(g), gNv = g.clone().sub(gT);
-    const gOn = ease(7.7, 8.3, tc), split = ease(10.0, 10.8, tc), cut = ease(12.0, 12.8, tc);
+    const gOn = ease(7.7, 8.3, tc), split = ease(9.9, 10.4, tc), xOn = ease(11.9, 12.2, tc), cut = ease(12.5, 13.0, tc);
     placeArrow(gArr, yy, g, g.length() * gOn + 1e-3);
-    setOpacity(gArr.userData.m, Math.min(gOn * 1.5, 1) * (1 - 0.9 * split) * (1 - cut) * out);
+    setOpacity(gArr.userData.m, Math.min(gOn * 1.5, 1) * (1 - 0.85 * split) * (1 - cut) * out);
     placeArrow(passArr, yy, gT.lengthSq() > 1e-12 ? gT : F.t1, gT.length() * split + 1e-3);
-    passArr.userData.m.emissiveIntensity = 0.4 + 0.6 * split * (1 - ease(13.2, 13.8, tc)) * (0.5 + 0.5 * Math.sin(T * 5));
+    passArr.userData.m.emissiveIntensity = 0.4 + 0.5 * split * (1 - ease(13.2, 13.8, tc)) * (0.5 + 0.5 * Math.sin(T * 5));
     setOpacity(passArr.userData.m, Math.min(split * 1.5, 1) * out * (1 - ease(16.6, 17.2, tc)));
-    placeArrow(blockArr, yy, F.n, gNv.length() * split * (1 - cut) + 1e-3);
-    blockArr.userData.m.color.copy(blockCol0).lerp(blockCol1, ease(11.1, 11.9, tc));
+    placeArrow(blockArr, yy, F.n, gNv.length() * split + 1e-3);
     setOpacity(blockArr.userData.m, Math.min(split * 1.5, 1) * (1 - cut) * out);
-    splitDash.list.forEach(d => { d.visible = false; });
-    const sdOn = split * (1 - cut) * out;
-    if (sdOn > 0.01) {
-      const tip = yy.clone().add(g), k = dashLine(splitDash, 0, yy.clone().add(gT), tip, 0.035, 0.03);
-      dashLine(splitDash, k, yy.clone().add(gNv), tip, 0.035, 0.03);
-    }
-    splitDash.m.opacity = 0.4 * sdOn;
+    // the removed part gets crossed out, then fades
+    cross.position.copy(yy).addScaledVector(F.n, 0.5 * gNv.length());
+    qInv.copy(world.quaternion).invert();
+    cross.quaternion.copy(qInv).multiply(camera.quaternion);
+    cross.scale.setScalar(0.6 + 0.4 * xOn);
+    crossMat.opacity = xOn * (1 - cut) * out; cross.visible = crossMat.opacity > 0.003;
     // step 5: descent trail, older hops fade
     trailSegs.forEach((sg, k) => {
       const part = Math.min(Math.max(gs - k, 0), 1);
@@ -618,31 +675,38 @@
       const a = toScreen(p3, W, H);
       want.push({ name, el, show, ax: a.x, ay: a.y, dx, dy, prio: prio || 0, w: el.offsetWidth + 4, h: el.offsetHeight, more: more || [] });
     }
-    put("f", fpt, appear * out * (1 - ease(6.4, 6.9, tc)), 0, -20, 1);
-    { const t = tc < 6.6 ? "nearest allowed point" : "output"; if (labels.y && labels.y.textContent !== t) { labels.y.textContent = t; labels.y.classList.toggle("long", t.length > 8); } }
     {
-      // the output's label sits across the push direction, clear of arrows and trail
-      // across the whole descent path (fixed per cycle), so the label keeps its side while the output moves
-      const a2 = toScreen(loss.P[0], W, H), b2 = toScreen(loss.P[NGD], W, H);
-      let ux = b2.x - a2.x, uy = b2.y - a2.y; const L = Math.hypot(ux, uy);
-      if (L > 3 && tc > 7.6) {
-        ux /= L; uy /= L;
-        let px = -uy, py = ux; if (px > 0) { px = -px; py = -py; }
-        // steps 3-4: behind the output (both sides of the push stay free for its labels); step 5: beside the path
-        if (tc < 13.2) put("y", yy, yOn, -24 * ux, -24 * uy, 0);
-        else put("y", yy, yOn, 30 * px, 22 * py, 0);
-      } else put("y", yy, yOn, -(labels.y.offsetWidth / 2 + 14), 14, 0);
+      // the estimate's label points away from the wall on screen, so it never has to cross the shape
+      const a2 = toScreen(fpt, W, H), c2 = toScreen(F.c, W, H);
+      let ux = a2.x - c2.x, uy = a2.y - c2.y; const L = Math.hypot(ux, uy) || 1; ux /= L; uy /= L;
+      put("f", fpt, out * Math.max(appear * (1 - ease(6.4, 6.9, tc)), fBack * (1 - ease(16.4, 16.9, tc))), 24 * ux, 24 * uy - 6, 1);
+    }
+    {
+      // the output keeps one name and one side for the whole cycle: across its direction of travel
+      // (off the kept part and the trail), on the side away from the removed part
+      const a2 = toScreen(yy, W, H), b2 = toScreen(tmp2.copy(yy).add(loss.travel), W, H), n2 = toScreen(tmp2.copy(yy).add(F.n), W, H);
+      let ux = b2.x - a2.x, uy = b2.y - a2.y; const L = Math.hypot(ux, uy) || 1; ux /= L; uy /= L;
+      let px = -uy, py = ux;
+      const nx = n2.x - a2.x, ny = n2.y - a2.y, dn = (px * nx + py * ny) / (Math.hypot(nx, ny) || 1);
+      if (!sideMemo.y && yOn > 0.5 && Math.abs(dn) > 0.25) sideMemo.y = dn > 0 ? -1 : 1;  // decided once the output is on screen
+      const sg = sideMemo.y || (dn > 0 ? -1 : 1);
+      // centre distance = the label's half-extent along that direction + a 16 px gap from the dot
+      const lw = labels.y.offsetWidth + 4, lh = labels.y.offsetHeight, dd = Math.abs(px) * lw / 2 + Math.abs(py) * lh / 2 + 16;
+      put("y", yy, yOn, dd * sg * px, dd * sg * py, 0);
     }
     put("face", faceLabelAt, faceOn * (1 - ease(7.6, 8.1, tc)), 0, 0, 3);
-    put("best", loss.ys, lossOn * Math.max(1 - ease(9.6, 10.0, tc), ease(13.6, 14.1, tc) * lin(0.2, 0.36, yy.distanceTo(loss.ys))), 0, 16, 2);
-    // arrow labels sit beside the shaft, 65% of the way out: the push and kept parts on the wall's side, removed outside
+    put("best", loss.ys, lossOn * lin(0.34, 0.52, yy.distanceTo(loss.ys)), 0, 16, 2);
+    // arrow labels sit beside the shaft, 65% of the way out: the push on the wall's side, kept and removed outside
+    // (the output's own label holds the wall's side for the whole cycle)
     const wallC = toScreen(F.c, W, H);
     function beside(name, v, show, prio, toward) {
       const a2 = toScreen(yy, W, H), b2 = toScreen(yy.clone().add(v), W, H);
       let ux = b2.x - a2.x, uy = b2.y - a2.y; const L = Math.hypot(ux, uy) || 1; ux /= L; uy /= L;
       let px = -uy, py = ux;
       const mx = a2.x + 0.65 * (b2.x - a2.x), my = a2.y + 0.65 * (b2.y - a2.y);
-      const sgn = px * (mx - wallC.x) + py * (my - wallC.y) < 0 ? -1 : 1;
+      // the side is decided once per cycle, so the label never swaps sides while the camera moves
+      if (!sideMemo[name] && show > 0.04) sideMemo[name] = px * (mx - wallC.x) + py * (my - wallC.y) < 0 ? -1 : 1;
+      const sgn = sideMemo[name] || 1;
       px *= toward ? -sgn : sgn; py *= toward ? -sgn : sgn;
       const along = [0.45, 0.85, 0.3, 1.05].map(f => ({ x: a2.x + f * (b2.x - a2.x), y: a2.y + f * (b2.y - a2.y) }));
       put(name, yy.clone().addScaledVector(v, 0.65), show, 12 * px, 12 * py, prio, along);
@@ -650,12 +714,12 @@
     }
     // anchored to each arrow's full length, so the label does not chase the tip while the arrow grows
     beside("grad", g, gOn * (1 - ease(9.9, 10.3, tc)) * out, 4, true);
-    beside("pass", gT, split * out * (1 - ease(13.4, 13.9, tc)) * Math.min(1, Math.max(0, (gT.length() - 0.1) / 0.15)), 5, true);
-    beside("blocked", F.n.clone().multiplyScalar(Math.max(gNv.length(), 0.05)), split * (1 - ease(12.2, 12.7, tc)) * out, 6, false);
+    beside("pass", gT, split * out * (1 - ease(13.4, 13.9, tc)) * Math.min(1, Math.max(0, (gT.length() - 0.1) / 0.15)), 5, false);
+    beside("blocked", F.n.clone().multiplyScalar(Math.max(gNv.length(), 0.05)), split * (1 - ease(12.5, 12.9, tc)) * out, 6, false);
     put("C", V(0, -0.15, 0), appear * out * (1 - ease(3.0, 3.5, tc)), 0, 0, 7);
     // obstacles on screen: the wall's edges, the arrows, the dashed residual, the points
     const segsS = [], ptsS = [];
-    if (faceOn > 0.1) { const wv = F.verts.map(v => toScreen(v, W, H)); wv.forEach((q, i) => segsS.push([q, wv[(i + 1) % wv.length], 6, 320])); }
+    if (faceOn > 0.1) { const wv = F.verts.map(v => toScreen(v, W, H)); wv.forEach((q, i) => segsS.push([q, wv[(i + 1) % wv.length], 6, 320, 1])); }
     const yS = toScreen(yy, W, H);
     // the shape's outline (convex hull of its projected corners): outside labels keep off it
     const hullS = [];
@@ -671,9 +735,23 @@
     const addSeg = (p3, on) => { if (on > 0.15) segsS.push([yS, toScreen(p3, W, H), 3]); };
     addSeg(yy.clone().add(g), gArr.userData.m.opacity);
     addSeg(yy.clone().add(gT), passArr.userData.m.opacity);
+    // from step 3 on, keep the kept part's path free even before it appears, so the output's label
+    // does not settle there and then have to jump away when the push is split
+    if (tc > 6.6) segsS.push([yS, toScreen(tmp2.copy(yy).add(gT), W, H), 8, 320]);
     addSeg(yy.clone().addScaledVector(F.n, gNv.length()), blockArr.userData.m.opacity);
     if (resOn > 0.15) segsS.push([yS, toScreen(fpt, W, H), 2]);
-    if (yOn > 0.1) ptsS.push([yS, 9]);
+    if (itMat.opacity > 0.15) {
+      // the solver path and its iterates
+      const n = Math.min(Math.ceil(drawK), its.length - 1);
+      let prevS = toScreen(its[0], W, H);
+      for (let k = 0; k < n; k++) { const s = toScreen(its[k + 1], W, H); segsS.push([prevS, s, 5]); prevS = s; }
+    }
+    if (gs > 0.05) {
+      // the descent trail behind the output
+      let prevS = toScreen(loss.P[0], W, H);
+      for (let k = 1; k <= Math.min(Math.ceil(gs), NGD); k++) { const s = toScreen(k < gs ? loss.P[k] : yy, W, H); segsS.push([prevS, s, 6]); prevS = s; }
+    }
+    if (yOn > 0.1) ptsS.push([yS, 14]);
     if (fSphere.material.opacity > 0.1) ptsS.push([toScreen(fpt, W, H), 11]);
     if (lossOn > 0.1) ptsS.push([toScreen(loss.ys, W, H), 8]);
     const vis = want.filter(a => a.show > 0.04).sort((a, b) => a.prio - b.prio);
@@ -701,12 +779,25 @@
         if (best && cost >= best.cost) continue;
         placed.forEach(q => {
           const ox = Math.min(R.x1, q.x1) - Math.max(R.x0, q.x0) + 3, oy = Math.min(R.y1, q.y1) - Math.max(R.y0, q.y0) + 3;
-          if (ox > 0 && oy > 0) cost += 200 + ox * oy;
+          if (ox > 0 && oy > 0) cost += 700 + ox * oy * 2;
         });
-        for (let i = 0; i < segsS.length && (!best || cost < best.cost); i++) { const sg = segsS[i], d = segRectDist(sg[0].x, sg[0].y, sg[1].x, sg[1].y, R); if (d < sg[2]) cost += (sg[3] || 120) + (sg[2] - d) * 20; }
+        for (let i = 0; i < segsS.length && (!best || cost < best.cost); i++) { const sg = segsS[i]; if (sg[4] && a.name === "y") continue; const d = segRectDist(sg[0].x, sg[0].y, sg[1].x, sg[1].y, R); if (d < sg[2]) cost += (sg[3] || 120) + (sg[2] - d) * 20; }
         if (OUTSIDE[a.name]) for (let i = 0; i < hullS.length && (!best || cost < best.cost); i++) { const sg = hullS[i], d = segRectDist(sg[0].x, sg[0].y, sg[1].x, sg[1].y, R); if (d < sg[2]) cost += sg[3] + (sg[2] - d) * 10; }
         ptsS.forEach(([p, m]) => { const d = ptRectDist(p.x, p.y, R); if (d < m) cost += 120 + (m - d) * 20; });
         if (!best || cost < best.cost) best = { cost, cx, cy, R };
+      }
+      if (DEBUG && (a.name === "y" || a.name === "f")) {
+        // why the output's label sits where it does: obstacle costs at the chosen and the preferred spot
+        const parts = R => {
+          const o = { placed: 0, segs: [], pts: 0 };
+          placed.forEach(q => { const ox = Math.min(R.x1, q.x1) - Math.max(R.x0, q.x0) + 3, oy = Math.min(R.y1, q.y1) - Math.max(R.y0, q.y0) + 3; if (ox > 0 && oy > 0) o.placed += 700 + ox * oy * 2; });
+          segsS.forEach((sg, i) => { if (sg[4]) return; const d = segRectDist(sg[0].x, sg[0].y, sg[1].x, sg[1].y, R); if (d < sg[2]) o.segs.push([i, sg[2], Math.round((sg[3] || 120) + (sg[2] - d) * 20)]); });
+          ptsS.forEach(([p, m]) => { const d = ptRectDist(p.x, p.y, R); if (d < m) o.pts += Math.round(120 + (m - d) * 20); });
+          return o;
+        };
+        const ux0 = Math.cos(ang0), uy0 = Math.sin(ang0), e0 = extOf(ux0, uy0), cx0 = a.ax + ux0 * (gap0 + e0), cy0 = a.ay + uy0 * (gap0 + e0);
+        (dbg.why = dbg.why || {})[a.name] = { best: [Math.round(best.cx - a.ax), Math.round(best.cy - a.ay), Math.round(best.cost)], bestParts: parts(best.R),
+          pref: [Math.round(cx0 - a.ax), Math.round(cy0 - a.ay)], prefParts: parts({ x0: cx0 - a.w / 2, x1: cx0 + a.w / 2, y0: cy0 - a.h / 2, y1: cy0 + a.h / 2 }), nSegs: segsS.length };
       }
       // last resort: keep the whole label inside the figure
       const ox = Math.min(0, W - 2 - best.R.x1) + Math.max(0, 2 - best.R.x0), oy = Math.min(0, H - 2 - best.R.y1) + Math.max(0, 2 - best.R.y0);
@@ -717,14 +808,33 @@
     want.forEach(a => {
       const prev = labelPrev[a.name] || (labelPrev[a.name] = { x: 0, y: 0, tx: 0, ty: 0, vis: false });
       if (a.show > 0.04) {
-        const k = snap || !prev.vis ? 1 : 1 - Math.exp(-dtFrame * 10);
+        const k = snap || !prev.vis ? 1 : 1 - Math.exp(-dtFrame * (a.name === "y" ? 5 : 10));
         if (PERF && prev.vis && a.show > 0.3 && Math.hypot(a.tx - prev.tx, a.ty - prev.ty) > 30) (dbg.jumps = dbg.jumps || []).push([a.name, +tv.toFixed(2), Math.round(Math.hypot(a.tx - prev.tx, a.ty - prev.ty))]);
         prev.x += (a.tx - prev.x) * k; prev.y += (a.ty - prev.y) * k; prev.tx = a.tx; prev.ty = a.ty; prev.vis = true;
         a.el.style.transform = `translate(${prev.x.toFixed(1)}px, ${prev.y.toFixed(1)}px) translate(-50%, -50%)`;
       } else prev.vis = false;
       a.el.style.opacity = a.show;
     });
+    {
+      // a short leader line ties the output's label to its dot whenever the label sits apart from it
+      const a = want.find(q => q.name === "y"), pv = labelPrev.y;
+      let lo = 0;
+      if (a && a.show > 0.04 && pv && pv.vis) {
+        const R = { x0: pv.x - a.w / 2, x1: pv.x + a.w / 2, y0: pv.y - a.h / 2, y1: pv.y + a.h / 2 };
+        const d = ptRectDist(yS.x, yS.y, R);
+        if (d > 22) {
+          const qx = Math.min(Math.max(yS.x, R.x0), R.x1), qy = Math.min(Math.max(yS.y, R.y0), R.y1);
+          const sx = yS.x + (qx - yS.x) * 9 / d, sy = yS.y + (qy - yS.y) * 9 / d, L = Math.hypot(qx - sx, qy - sy);
+          leader.style.width = L.toFixed(1) + "px";
+          leader.style.transform = `translate(${sx.toFixed(1)}px, ${sy.toFixed(1)}px) rotate(${Math.atan2(qy - sy, qx - sx).toFixed(4)}rad)`;
+          lo = Math.min(1, (d - 22) / 8) * a.show;
+        }
+        dbg.yLabelGap = Math.round(d);
+      }
+      leader.style.opacity = lo;
+    }
     dbg.labelsShown = want.filter(a => a.show > 0.3).map(a => a.name);
+    if (DEBUG) dbg.anchors = Object.fromEntries(want.map(q => [q.name, [Math.round(q.ax), Math.round(q.ay)]]));
     if (FIXT !== null) {
       // debug metrics: obliqueness of the wall, its screen polygon, content box, label boxes
       const fcW = F.c.clone().applyMatrix4(world.matrixWorld), nW = F.n.clone().transformDirection(world.matrixWorld);
@@ -741,6 +851,24 @@
           dmin = Math.min(dmin, Math.hypot(fS.x - q.x - t * ex, fS.y - q.y - t * ey));
         });
         dbg.fOut = inside ? -dmin : dmin;
+      }
+      {
+        // the split on screen: angle between kept and removed, and whether removed leaves the wall's outline
+        const inPoly = (p, poly) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a.y > p.y) !== (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) c = !c; } return c; };
+        const kS = toScreen(yy.clone().add(gT), W, H), rS = toScreen(yy.clone().addScaledVector(F.n, gNv.length()), W, H), gS = toScreen(yy.clone().add(g), W, H);
+        const ax = kS.x - yS.x, ay = kS.y - yS.y, bx = rS.x - yS.x, by = rS.y - yS.y;
+        dbg.splitAngle = Math.acos(Math.max(-1, Math.min(1, (ax * bx + ay * by) / (Math.hypot(ax, ay) * Math.hypot(bx, by) + 1e-9)))) * 180 / Math.PI;
+        dbg.removedPx = Math.hypot(bx, by);
+        dbg.removedTipOutside = !inPoly(rS, dbg.wall);
+        dbg.pushTipOutside = !inPoly(gS, dbg.wall);
+        // where the shape is cut by the box: length of each box edge that lies inside the shape's outline
+        const hp = hullS.length ? hullS.map(h => h[0]) : null;
+        if (hp) {
+          const cut = { top: 0, bottom: 0, left: 0, right: 0 };
+          for (let x = 0; x <= W; x += 2) { if (inPoly({ x, y: 0.5 }, hp)) cut.top += 2; if (inPoly({ x, y: H - 0.5 }, hp)) cut.bottom += 2; }
+          for (let y = 0; y <= H; y += 2) { if (inPoly({ x: 0.5, y }, hp)) cut.left += 2; if (inPoly({ x: W - 0.5, y }, hp)) cut.right += 2; }
+          dbg.cut = cut;
+        }
       }
       const pts = geo.userData.polys.flatMap(P => P.verts).map(v => toScreen(v, W, H));
       if (fSphere.material.opacity > 0.05) pts.push(toScreen(fpt, W, H));
@@ -764,58 +892,57 @@
     yawUser += (e.clientX - px) * 0.008;
     pitchUser = Math.max(-0.8, Math.min(0.8, pitchUser + (e.clientY - py) * 0.006));
     px = e.clientX; py = e.clientY;
+    requestDraw();
   });
   ["pointerup", "pointercancel", "pointerleave"].forEach(ev => el.addEventListener(ev, () => { dragging = false; }));
 
-  function resize() {
-    const W = host.clientWidth, H = host.clientHeight;
-    renderer.setSize(W, H, false);
-    el.style.width = W + "px"; el.style.height = H + "px";
-    camera.aspect = W / H;
-    camera.updateProjectionMatrix();
-  }
-  window.addEventListener("resize", resize);
-  resize();
-
+  // ---------- clock and loop ----------
+  // the animation runs on its own clock, advanced by at most 0.1 s per frame: a hidden tab or a
+  // stall resumes where it left off instead of replaying the missed time. Rendering stops while
+  // the figure is off-screen, the tab is hidden, the viewer has paused it, or the context is lost.
   const prm = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   const reduce = FIXT !== null || prm;
+  const PRM_T = 14.3;  // reduced motion: a still of step 4, both parts of the push shown, the removed one crossed out
   if (prm && stepsEl) {
     stepsEl.classList.add("all");
-    stepsEl.querySelector(".h3d-step-text").innerHTML = "<ol>" + STEPS.map(s => `<li>${s[2]}</li>`).join("") + "</ol>";
+    stepText.innerHTML = "<ol>" + STEPS.map(s => `<li>${s[2]}</li>`).join("") + "</ol>";
   }
-  const t0 = performance.now();
+  let clock = 0, lastNow = null, running = false, paused = false, onScreen = true, ctxLost = false, drawQueued = false;
   let cycleIdx = null;
   let qStart = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.18, -0.35, 0)), qTarget = qStart.clone();
-  const qBase = new THREE.Quaternion(), qUser = new THREE.Quaternion(), qSway = new THREE.Quaternion();
-  world.position.x = -0.32;
+  const qBase = new THREE.Quaternion(), qUser = new THREE.Quaternion(), qSway = new THREE.Quaternion(), eul = new THREE.Euler();
   const CAM_POS = camera.position.clone(), CAM_LOOK = V(0, -0.08, 0), camTarget = CAM_LOOK.clone();
-  const TILT = 0.70, FIT = 1.22, AIM_X = 0.28, AIM_Y = 0.16, keyC = V(), kp = V();
-  function frame(now) {
-    const T = FIXT !== null ? FIXT : prm ? 12.1 : Math.max(0, (now - t0) / 1000);
+  // the close-up looks at the wall 40 degrees off its normal; while the push is split it tilts to
+  // 60 degrees, so the part across the wall visibly stands out of it
+  const TILT_A = 0.70, TILT_B = 1.05, FIT = 1.3, AIM_X = 0.28, AIM_Y = 0.12, keyC = V(), kp = V(), camDir = V(), camRight = V(), camUp = V(), aim = V();
+  function draw() {
+    if (ctxLost) return;
+    dbg.frames = (dbg.frames || 0) + 1;
+    const T = FIXT !== null ? FIXT : prm ? PRM_T : clock;
     const ci = Math.floor(T / CYCLE);
     if (ci !== cycleIdx) {
-      // replay the turns of skipped cycles so a frozen ?t= frame matches the live animation
-      for (let k = cycleIdx === null ? 0 : cycleIdx + 1; k <= ci; k++) { qStart = qTarget.clone(); qTarget = newCycle(qStart); }
+      // a frozen ?t= frame replays the earlier cycles' turns so it matches the live animation
+      const from = cycleIdx === null ? 0 : cycleIdx + 1;
+      for (let k = Math.max(from, ci - 12); k <= ci; k++) { qStart = qTarget.clone(); qTarget = newCycle(qStart); }
       cycleIdx = ci;
     }
     const tv = T - ci * CYCLE, tc = warp(tv);
-    dtFrame = lastT === null ? 1 : Math.max(0, T - lastT); lastT = T;
-    qBase.copy(qStart).slerp(qTarget, ease(0.0, 1.3, tc));
-    qSway.setFromEuler(new THREE.Euler(0, prm ? 0 : 0.1 * Math.sin(T * 0.5), 0));
-    qUser.setFromEuler(new THREE.Euler(pitchUser, yawUser, 0));
+    dtFrame = lastT === null || reduce ? 1 : Math.max(0, T - lastT); lastT = T;
+    qBase.copy(qStart).slerp(qTarget, ease(0.0, 0.9, tc));
+    qSway.setFromEuler(eul.set(0, prm ? 0 : 0.1 * Math.sin(T * 0.5), 0));
+    qUser.setFromEuler(eul.set(pitchUser, yawUser, 0));
     world.quaternion.copy(qUser).multiply(qSway).multiply(qBase);
     world.updateMatrixWorld();
     // dolly in on the tight face while the loss and its gradient are shown, back out at the end
     const zoom = ease(3.6, 6.2, tc) * (1 - ease(16.6, 17.9, tc));
-    // the close-up looks at the face 40 degrees off its normal, so the outward (blocked) part
-    // never points straight at the viewer
     const fc = F.c.clone().applyMatrix4(world.matrixWorld);
     const nW = F.n.clone().transformDirection(world.matrixWorld);
-    // tilt within the plane spanned by n and (n x passed direction): the passed part then keeps its
-    // full length on screen and the blocked part appears at a right angle to it
+    // tilt within the plane spanned by n and (n x kept direction): the kept part keeps its full
+    // length on screen and the removed part appears at a right angle to it
     const side = loss.side.clone().transformDirection(world.matrixWorld);
     if (side.x > 0) side.negate();
-    const camDir = nW.clone().multiplyScalar(Math.cos(TILT)).addScaledVector(side, Math.sin(TILT)).normalize();
+    const tilt = TILT_A + (TILT_B - TILT_A) * ease(6.9, 8.0, tc) * (1 - ease(13.3, 14.3, tc));
+    camDir.copy(nW).multiplyScalar(Math.cos(tilt)).addScaledVector(side, Math.sin(tilt)).normalize();
     // fit: centre of the key points' bounding sphere, distance so the sphere fills the view
     keyC.set(0, 0, 0);
     loss.key.forEach(p => keyC.add(kp.copy(p).applyMatrix4(world.matrixWorld)));
@@ -823,13 +950,14 @@
     let R = 0; loss.key.forEach(p => { R = Math.max(R, kp.copy(p).applyMatrix4(world.matrixWorld).distanceTo(keyC)); });
     const halfFov = Math.min(camera.fov, 2 * Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect) * 180 / Math.PI) * Math.PI / 360;
     const D = FIT * R / Math.sin(halfFov);
-    // aim a little left of and below the key points: the shape's body fills the left and bottom,
-    // the estimate and the arrows get the open space on the right and top
-    const camRight = V().crossVectors(camDir.clone().negate(), V(0, 1, 0)).normalize(), camUp = V().crossVectors(camRight, camDir.clone().negate());
-    const aimX = AIM_X * Math.min(Math.max((camera.aspect - 1.33) / 0.45, 0), 1);  // only wide boxes have room to spare on the right
-    const aim = kp.copy(keyC).addScaledVector(camRight, -aimX * R).addScaledVector(camUp, -AIM_Y * R);
+    // aim a little left of and below the key points on wide boxes: the shape's body fills the left,
+    // the estimate and the arrows get the open space on the right
+    camRight.crossVectors(kp.copy(camDir).negate(), V(0, 1, 0)).normalize();
+    camUp.crossVectors(camRight, kp.copy(camDir).negate());
+    const aimX = (window.innerWidth < 900 ? 0 : AIM_X) * Math.min(Math.max((camera.aspect - 1.33) / 0.45, 0), 1);
+    aim.copy(keyC).addScaledVector(camRight, -aimX * R).addScaledVector(camUp, -AIM_Y * R);
     camTarget.copy(CAM_LOOK).lerp(aim, zoom);
-    camera.position.copy(CAM_POS).lerp(aim.clone().addScaledVector(camDir, D), zoom);
+    camera.position.copy(CAM_POS).lerp(kp.copy(aim).addScaledVector(camDir, D), zoom);
     camera.lookAt(camTarget);
     camera.updateMatrixWorld();
     const u0 = PERF ? performance.now() : 0;
@@ -845,16 +973,72 @@
       const sc = host.clientWidth / w;
       dbg.alphaBox = { x0: x0 * sc, x1: x1 * sc, top: (hgt - 1 - y1) * sc, bottom: (hgt - 1 - y0) * sc, W: host.clientWidth, H: host.clientHeight };
     }
-    if (!reduce) requestAnimationFrame(frame);
   }
-  requestAnimationFrame(frame);
-  if (FIXT !== null) dbg.render = t => { FIXT = t; frame(performance.now()); return dbg; };
-  // static modes (reduced motion, frozen ?t=) draw on demand once layout and fonts settle
-  const redraw = () => { if (reduce) requestAnimationFrame(frame); };
-  if (reduce) {
-    window.addEventListener("resize", redraw);
-    el.addEventListener("pointermove", () => { if (dragging) redraw(); });
-    if (document.fonts && document.fonts.ready) document.fonts.ready.then(redraw);
-    window.addEventListener("load", redraw);
+  const wantRun = () => !reduce && !paused && onScreen && !document.hidden && !ctxLost;
+  function tick(now) {
+    if (!wantRun()) { running = false; return; }
+    const dt = lastNow === null ? 0 : Math.min(Math.max((now - lastNow) / 1000, 0), 0.1);
+    lastNow = now; clock += dt;
+    draw();
+    requestAnimationFrame(tick);
   }
+  function kick() { if (!running && wantRun()) { running = true; lastNow = null; requestAnimationFrame(tick); } }
+  function requestDraw() {
+    if (running || drawQueued) return;
+    drawQueued = true;
+    requestAnimationFrame(() => { drawQueued = false; draw(); });
+  }
+
+  let lastW = 0, lastH = 0;
+  function resize() {
+    const W = host.clientWidth, H = host.clientHeight;
+    if (!W || !H) return;
+    if (W !== lastW || H !== lastH) {
+      lastW = W; lastH = H;
+      renderer.setSize(W, H, false);
+      el.style.width = W + "px"; el.style.height = H + "px";
+      camera.aspect = W / H;
+      camera.updateProjectionMatrix();
+      world.position.x = window.innerWidth < 900 ? -0.12 : -0.32;
+    }
+    reserveCaption();
+    requestDraw();
+  }
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(host);
+  window.addEventListener("resize", resize);
+  resize();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(resize);
+  window.addEventListener("load", resize);
+
+  if (window.IntersectionObserver) new IntersectionObserver(es => { onScreen = es[es.length - 1].isIntersecting; kick(); }).observe(host);
+  document.addEventListener("visibilitychange", kick);
+
+  // pause / play
+  const pauseBtn = stepsEl && stepsEl.querySelector(".h3d-pause");
+  if (pauseBtn) {
+    if (reduce) pauseBtn.hidden = true;
+    pauseBtn.addEventListener("click", () => {
+      paused = !paused;
+      pauseBtn.setAttribute("aria-pressed", paused ? "true" : "false");
+      pauseBtn.classList.toggle("paused", paused);
+      pauseBtn.title = paused ? "Play animation" : "Pause animation";
+      if (!paused) kick();
+    });
+  }
+
+  // a lost WebGL context: three.js restores buffers and textures itself, but the prefiltered
+  // environment map was rendered on the GPU and has to be built again
+  el.addEventListener("webglcontextlost", e => { e.preventDefault(); ctxLost = true; }, false);
+  el.addEventListener("webglcontextrestored", () => {
+    ctxLost = false;
+    buildEnv(true);
+    if (shadowTex) shadowTex.needsUpdate = true;
+    scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => { m.needsUpdate = true; }); });
+    kick(); requestDraw();
+  }, false);
+
+  if (FIXT !== null) dbg.render = t => { FIXT = Math.min(Math.max(+t || 0, 0), 240); draw(); return dbg; };
+  if (DEBUG) dbg.advance = sec => { for (let s = 0; s < sec; s += 0.1) { clock += 0.1; draw(); } return dbg.info(); };
+  dbg.info = () => ({ geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, programs: renderer.info.programs ? renderer.info.programs.length : null, clock, running });
+  if (reduce) requestDraw(); else kick();
 })();

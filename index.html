@@ -41,36 +41,45 @@
       margin: 0 auto 16px; width: 480px; height: 280px;
       animation: logoFadeIn 1s ease-out;
     }
-    #hero3d { position:relative; width:640px; height:360px; max-width:100%; }
-    #hero3d canvas { display:block; cursor:grab;
-      -webkit-mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent), linear-gradient(to bottom, transparent, #000 8%, #000 78%, transparent);
+    #hero3d { position:relative; width:640px; height:360px; max-width:100%; min-height:0; }
+    #hero3d canvas { position:absolute; left:0; top:0; display:block; cursor:grab;
+      -webkit-mask-image: linear-gradient(to right, transparent, #000 16%, #000 84%, transparent), linear-gradient(to bottom, transparent, #000 22%, #000 76%, transparent);
       -webkit-mask-composite: source-in;
-      mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent), linear-gradient(to bottom, transparent, #000 8%, #000 78%, transparent);
+      mask-image: linear-gradient(to right, transparent, #000 16%, #000 84%, transparent), linear-gradient(to bottom, transparent, #000 22%, #000 76%, transparent);
       mask-composite: intersect; }
     #hero3d canvas:active { cursor:grabbing; }
     #hero3d .hero-fallback { width:480px; height:280px; max-width:100%; margin:40px auto 0; }
     #hero3d.has-3d .hero-fallback { display:none; }
     .h3d-label { position:absolute; left:0; top:0; z-index:2; opacity:0; pointer-events:none; white-space:nowrap; font-size:13px; font-weight:700; line-height:1.35; transition:opacity 0.2s;
-      padding:1px 7px; border-radius:7px; background:rgba(255,255,255,0.8); box-shadow:0 1px 3px rgba(15,23,42,0.10); }
-    #hero3d:not(.has-3d) .h3d-label { display:none; }
+      padding:1px 7px; border-radius:7px; background:rgba(255,255,255,0.86); box-shadow:0 1px 3px rgba(15,23,42,0.10); }
+    #hero3d:not(.has-3d) .h3d-label, #hero3d:not(.has-3d) .h3d-leader { display:none; }
+    .h3d-leader { position:absolute; left:0; top:0; z-index:1; height:1.5px; width:0; background:#9a3412; opacity:0; transform-origin:0 50%; pointer-events:none; border-radius:1px; }
     .lab-f { color:#1e3a8a; }
     .lab-y { color:#9a3412; }
-    .lab-y.long { white-space:normal; width:118px; text-align:center; line-height:1.2; padding:2px 6px; }
     .lab-face { color:#9a3412; }
-    .lab-blocked { color:#475569; }
-    .lab-pass { color:#1d4ed8; }
+    .lab-blocked { color:#b91c1c; }
+    .lab-pass { color:#1d4ed8; font-weight:800; }
     .lab-grad { color:#334155; }
     .lab-best { color:#1e3a8a; }
     .lab-C { color:#1e3a8a; font-size:15px; font-weight:700; letter-spacing:0.2px; background:rgba(255,255,255,0.62); }
-    .h3d-steps { display:none; max-width:640px; margin:-6px auto 18px; min-height:52px; }
+    .h3d-steps { display:none; max-width:640px; margin:-14px auto 10px; }
     #hero3d.has-3d + .h3d-steps { display:block; }
-    .h3d-dots { display:flex; justify-content:center; gap:7px; margin-bottom:7px; }
+    .h3d-dots-row { display:flex; justify-content:center; align-items:center; gap:12px; margin-bottom:7px; }
+    .h3d-dots { display:flex; justify-content:center; gap:7px; }
+    .h3d-pause { width:24px; height:24px; padding:0; border-radius:50%; border:1px solid #64748b; background:rgba(255,255,255,0.75); color:#1e3a8a; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; transition:border-color 0.2s, background 0.2s; }
+    .h3d-pause:hover { border-color:#1d4ed8; background:#fff; }
+    .h3d-pause:focus-visible { outline:2px solid #1d4ed8; outline-offset:2px; }
+    .h3d-pause svg { width:10px; height:10px; display:block; }
+    .h3d-pause .ic-play, .h3d-pause.paused .ic-pause { display:none; }
+    .h3d-pause.paused .ic-play { display:block; }
     .h3d-dots i { width:7px; height:7px; border-radius:50%; background:#cbd5e1; transition:background 0.3s, transform 0.3s; }
     .h3d-dots i.on { background:#2563eb; transform:scale(1.25); }
     .h3d-dots i.done { background:#93c5fd; }
-    .h3d-step-text { font-size:0.98rem; font-weight:500; color:#1e293b; transition:opacity 0.35s; }
-    .h3d-step-text b { color:#2563eb; font-weight:700; margin-right:6px; }
-    .h3d-steps.all .h3d-dots { display:none; }
+    .h3d-step-text { display:grid; font-size:0.98rem; font-weight:500; color:#1e293b; }
+    .h3d-step-text > span { grid-area:1 / 1; align-self:start; opacity:0; transition:opacity 0.45s ease; }
+    .h3d-step-text b { color:#1d4ed8; font-weight:700; margin-right:6px; }
+    .h3d-steps.all .h3d-dots-row { display:none; }
+    .h3d-steps.all .h3d-step-text { display:block; }
     .h3d-steps.all ol { text-align:left; display:inline-block; margin:0; padding-left:1.4em; font-size:0.92rem; color:#1e293b; line-height:1.6; }
     @keyframes logoFadeIn { from { opacity:0; transform: scale(0.9) translateY(10px); } to { opacity:1; transform: scale(1) translateY(0); } }
     @keyframes fadeUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
@@ -156,10 +165,12 @@
       .lead { font-size:0.98rem; }
       .lead span { display:inline; }
       .proj-wrap { width:100%; max-width:480px; height:auto; aspect-ratio:420/280; }
-      #hero3d { width:100%; height:auto; aspect-ratio:4/3; max-width:640px; }
-      .h3d-label { font-size:11px; }
-      .lab-f { white-space:normal; width:106px; text-align:center; line-height:1.2; padding:2px 6px; }
-      .h3d-steps { margin-top:-2px; min-height:64px; padding:0 8px; }
+      #hero3d { width:100%; height:auto; aspect-ratio:4/3; max-width:640px; min-height:0; }
+      #hero3d .hero-fallback { width:100%; height:100%; margin:0; }
+      .h3d-label { font-size:12.5px; }
+      .lab-C { font-size:14px; }
+      .lab-f { white-space:normal; width:116px; text-align:center; line-height:1.2; padding:2px 6px; }
+      .h3d-steps { margin-top:-6px; padding:0 8px; }
       .h3d-step-text { font-size:0.9rem; }
       .duo-grid, .app-grid { grid-template-columns:1fr; }
       .bt-chart { min-height:240px; }
@@ -171,20 +182,20 @@
 <header class="hero">
   <div class="hero-content">
     <h1>ASPL</h1>
-    <div class="proj-wrap" id="hero3d" aria-label="The neural network makes an estimate outside the allowed region. ASPL moves it to the nearest allowed point, on the wall it touches. Training then pushes this output; ASPL keeps only the part of the push that runs along the wall and removes the part that would leave the region, so the output slides along the wall to a better answer while staying allowed.">
-      <span class="h3d-label lab-f" data-label="f">neural network estimate</span>
-      <span class="h3d-label lab-y" data-label="y">output</span>
-      <span class="h3d-label lab-face" data-label="face">wall it touches</span>
-      <span class="h3d-label lab-grad" data-label="grad">training push</span>
-      <span class="h3d-label lab-pass" data-label="pass">kept</span>
-      <span class="h3d-label lab-blocked" data-label="blocked">removed</span>
-      <span class="h3d-label lab-C" data-label="C">allowed region</span>
-      <span class="h3d-label lab-best" data-label="best">best point</span>
+    <div class="proj-wrap" id="hero3d" role="img" aria-label="An animation in five steps. 1: The neural network makes an estimate, outside the allowed region. 2: A standard solver moves it to the nearest allowed point, the output, and ASPL notes which wall of the region it lands on. 3: Training pushes the output toward the best allowed answer, partly across that wall. 4: ASPL keeps the part of the push along the wall and removes the part across it, with one small exact solve. 5: The output slides along the wall toward the best allowed answer, and the network&#39;s estimate moves with it.">
+      <span aria-hidden="true" class="h3d-label lab-f" data-label="f">neural network estimate</span>
+      <span aria-hidden="true" class="h3d-label lab-y" data-label="y">output</span>
+      <span aria-hidden="true" class="h3d-label lab-face" data-label="face">wall it touches</span>
+      <span aria-hidden="true" class="h3d-label lab-grad" data-label="grad">training push</span>
+      <span aria-hidden="true" class="h3d-label lab-pass" data-label="pass">kept</span>
+      <span aria-hidden="true" class="h3d-label lab-blocked" data-label="blocked">removed</span>
+      <span aria-hidden="true" class="h3d-label lab-C" data-label="C">allowed region</span>
+      <span aria-hidden="true" class="h3d-label lab-best" data-label="best">best allowed answer</span>
       <div class="hero-fallback">
       <!--
         Static fallback without WebGL: the neural network estimate outside the allowed
         region is moved to the nearest allowed point on the wall it touches,
-        then training slides that output along the wall.
+        then training slides that output along the wall to the best allowed answer.
       -->
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 280" width="100%" height="100%">
         <defs>
@@ -214,7 +225,7 @@
         <g filter="url(#nG)" opacity="0"><animate attributeName="opacity" to="1" dur="0.3s" begin="0.8s" fill="freeze"/>
           <circle cx="380" cy="110" r="8" fill="url(#ptBlue)"/>
         </g>
-        <text x="368" y="92" text-anchor="middle" fill="#1E3A8A" font-size="12" font-weight="700" font-family="DM Sans, sans-serif" opacity="0">neural network estimate<animate attributeName="opacity" to="1" dur="0.3s" begin="0.8s" fill="freeze"/></text>
+        <text x="404" y="94" text-anchor="end" fill="#1E3A8A" font-size="12" font-weight="700" font-family="DM Sans, sans-serif" opacity="0">neural network estimate<animate attributeName="opacity" to="1" dur="0.3s" begin="0.8s" fill="freeze"/></text>
 
         <!-- solver iterates converging to the tight face -->
         <path d="M380,110 L332,152 L318,116 L299,146 L292,128 L285.2,135.8" fill="none" stroke="#60A5FA" stroke-width="2" stroke-dasharray="230" stroke-dashoffset="230" stroke-linejoin="round" opacity="0.9">
@@ -238,23 +249,29 @@
         </line>
         <text x="306" y="200" fill="#C2410C" font-size="12.5" font-weight="700" font-family="DM Sans, sans-serif" opacity="0">wall it touches<animate attributeName="opacity" to="1" dur="0.4s" begin="2.4s" fill="freeze"/></text>
 
-        <!-- projected point y, then training slides it along the face -->
+        <!-- best allowed answer on the wall (the training target's nearest point on it) -->
+        <g opacity="0"><animate attributeName="opacity" to="1" dur="0.4s" begin="3.0s" fill="freeze"/>
+          <circle cx="289" cy="149.7" r="6.5" fill="none" stroke="#1E3A8A" stroke-width="1.8"/>
+          <circle cx="289" cy="149.7" r="2" fill="#1E3A8A"/>
+          <text x="300" y="166" fill="#1E3A8A" font-size="11.5" font-weight="700" font-family="DM Sans, sans-serif">best allowed answer</text>
+        </g>
+
+        <!-- the output y, then training slides it once along the wall to the best allowed answer -->
         <g opacity="0"><animate attributeName="opacity" to="1" dur="0.3s" begin="2.5s" fill="freeze"/>
-          <circle r="16" fill="url(#glowO)">
-            <animate attributeName="cx" values="285.2;279.0;285.2;291.4;285.2" dur="4s" begin="3.4s" repeatCount="indefinite"/>
-            <animate attributeName="cy" values="135.8;113.3;135.8;158.3;135.8" dur="4s" begin="3.4s" repeatCount="indefinite"/>
+          <circle cx="285.2" cy="135.8" r="16" fill="url(#glowO)">
+            <animate attributeName="cx" from="285.2" to="289" dur="2.4s" begin="3.6s" fill="freeze" calcMode="spline" keySplines="0.4 0 0.2 1" keyTimes="0;1"/>
+            <animate attributeName="cy" from="135.8" to="149.7" dur="2.4s" begin="3.6s" fill="freeze" calcMode="spline" keySplines="0.4 0 0.2 1" keyTimes="0;1"/>
           </circle>
           <circle cx="285.2" cy="135.8" r="7" fill="url(#ptOrange)" filter="url(#nG)">
-            <animate attributeName="cx" values="285.2;279.0;285.2;291.4;285.2" dur="4s" begin="3.4s" repeatCount="indefinite"/>
-            <animate attributeName="cy" values="135.8;113.3;135.8;158.3;135.8" dur="4s" begin="3.4s" repeatCount="indefinite"/>
+            <animate attributeName="cx" from="285.2" to="289" dur="2.4s" begin="3.6s" fill="freeze" calcMode="spline" keySplines="0.4 0 0.2 1" keyTimes="0;1"/>
+            <animate attributeName="cy" from="135.8" to="149.7" dur="2.4s" begin="3.6s" fill="freeze" calcMode="spline" keySplines="0.4 0 0.2 1" keyTimes="0;1"/>
           </circle>
         </g>
         <text x="252" y="141" text-anchor="end" fill="#9A3412" font-size="12.5" font-weight="700" font-family="DM Sans, sans-serif" opacity="0">output<animate attributeName="opacity" to="1" dur="0.3s" begin="2.6s" fill="freeze"/></text>
 
-        <!-- face-direction arrows (training moves along the face) -->
+        <!-- the kept part of the push, along the wall toward the best allowed answer -->
         <g opacity="0"><animate attributeName="opacity" to="0.9" dur="0.4s" begin="3.2s" fill="freeze"/>
-          <line x1="262" y1="104" x2="256" y2="82" stroke="#EA580C" stroke-width="1.6" marker-end="url(#arr)"/>
-          <line x1="279" y1="168" x2="285" y2="190" stroke="#EA580C" stroke-width="1.6" marker-end="url(#arr)"/>
+          <line x1="279" y1="118" x2="281.4" y2="127" stroke="#EA580C" stroke-width="1.6" marker-end="url(#arr)"/>
         </g>
 
         <!-- backward: one small solve -->
@@ -262,14 +279,17 @@
           <path d="M282,128 C250,40 140,20 60,48" fill="none" stroke="#EA580C" stroke-width="1.8" stroke-dasharray="6 5" marker-end="url(#arr)">
             <animate attributeName="stroke-dashoffset" values="0;-22" dur="1.2s" begin="3.0s" repeatCount="indefinite"/>
           </path>
-          <text x="22" y="32" fill="#C2410C" font-size="11.5" font-weight="600" font-family="DM Sans, sans-serif">only the push along the wall is kept</text>
+          <text x="22" y="32" fill="#C2410C" font-size="11.5" font-weight="600" font-family="DM Sans, sans-serif">ASPL keeps the push along the wall</text>
         </g>
       </svg>
       </div>
     </div>
-    <div class="h3d-steps" id="hero3d-steps" aria-hidden="true">
-      <div class="h3d-dots"><i></i><i></i><i></i><i></i><i></i></div>
-      <div class="h3d-step-text"></div>
+    <div class="h3d-steps" id="hero3d-steps">
+      <div class="h3d-dots-row">
+        <div class="h3d-dots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+        <button type="button" class="h3d-pause" aria-pressed="false" aria-label="Pause animation" title="Pause animation"><svg class="ic-pause" viewBox="0 0 10 10" aria-hidden="true"><rect x="1.5" y="1" width="2.5" height="8" rx="0.6" fill="currentColor"/><rect x="6" y="1" width="2.5" height="8" rx="0.6" fill="currentColor"/></svg><svg class="ic-play" viewBox="0 0 10 10" aria-hidden="true"><path d="M2.2 1.2 L8.8 5 L2.2 8.8 Z" fill="currentColor"/></svg></button>
+      </div>
+      <div class="h3d-step-text" aria-hidden="true"></div>
     </div>
     <div class="btn-group">
       <a class="btn btn-primary" href="paper.pdf" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 2l5 5h-5V4zM6 20V4h5v7h7v9H6z"/></svg> Paper</a>
