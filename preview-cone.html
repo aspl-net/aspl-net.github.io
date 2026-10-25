@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="robots" content="noindex" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ASPL: Active-Set Projection Layers for Hard-Constrained Neural Networks</title>
+  <meta name="description" content="ASPL: a differentiable projection layer that enforces hard constraints exactly and differentiates through the active manifold with one small solve." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --navy-900: #0a1628; --navy-800: #0f2140; --navy-700: #1e3a5f;
+      --blue-600: #2563eb; --blue-500: #3b82f6; --blue-400: #60a5fa;
+      --blue-300: #93c5fd; --blue-200: #bfdbfe; --blue-100: #dbeafe; --blue-50: #eff6ff;
+      --orange-600: #d9480f; --orange-500: #ea580c; --orange-200: #fed7aa; --orange-50: #fff7ed;
+      --slate-900: #0f172a; --slate-800: #1e293b; --slate-700: #334155;
+      --slate-500: #64748b; --slate-400: #94a3b8; --slate-300: #cbd5e1;
+      --slate-200: #e2e8f0; --slate-100: #f1f5f9; --slate-50: #f8fafc;
+      --white: #ffffff; --radius: 10px; --radius-lg: 16px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'DM Sans', -apple-system, sans-serif; color: var(--slate-800); line-height: 1.6; background: var(--white); -webkit-font-smoothing: antialiased; }
+
+    .hero {
+      background: linear-gradient(155deg, #d6e6f7 0%, #dbeafe 40%, #e8f1fc 70%, #eff6ff 100%);
+      color: var(--slate-800); padding: 36px 20px 40px; text-align: center;
+      position: relative; overflow: hidden;
+    }
+    .hero::before {
+      content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
+      background: radial-gradient(ellipse at 30% 50%, rgba(37,99,235,0.04) 0%, transparent 60%),
+                  radial-gradient(ellipse at 70% 30%, rgba(234,88,12,0.03) 0%, transparent 50%);
+      pointer-events: none;
+    }
+    .hero-content { position: relative; z-index: 1; }
+    .hero h1 { font-size:2.8rem; font-weight:700; letter-spacing:-1px; margin-bottom:18px; color:var(--navy-900); animation:fadeUp 0.6s ease-out 0.3s both; }
+    .lead { max-width:1040px; margin:0 auto 32px; text-align:center; font-size:1.02rem; line-height:1.8; color:var(--slate-700); }
+    .lead span { display:block; }
+
+    .proj-wrap {
+      margin: 0 auto 16px; width: 480px; height: 280px;
+      animation: logoFadeIn 1s ease-out;
+    }
+    #hero3d { position:relative; width:640px; height:360px; max-width:100%; min-height:0; }
+    #hero3d canvas { position:absolute; left:0; top:0; display:block; cursor:grab;
+      -webkit-mask-image: linear-gradient(to right, transparent, #000 16%, #000 84%, transparent), linear-gradient(to bottom, transparent, #000 22%, #000 76%, transparent);
+      -webkit-mask-composite: source-in;
+      mask-image: linear-gradient(to right, transparent, #000 16%, #000 84%, transparent), linear-gradient(to bottom, transparent, #000 22%, #000 76%, transparent);
+      mask-composite: intersect; }
+    #hero3d canvas:active { cursor:grabbing; }
+    #hero3d .hero-fallback { width:480px; height:280px; max-width:100%; margin:40px auto 0; }
+    #hero3d.has-3d .hero-fallback { display:none; }
+    .h3d-label { position:absolute; left:0; top:0; z-index:2; opacity:0; pointer-events:none; white-space:nowrap; font-size:13px; font-weight:700; line-height:1.35; transition:opacity 0.2s;
+      padding:1px 7px; border-radius:7px; background:rgba(255,255,255,0.86); box-shadow:0 1px 3px rgba(15,23,42,0.10); }
+    #hero3d:not(.has-3d) .h3d-label, #hero3d:not(.has-3d) .h3d-leader { display:none; }
+    .h3d-leader { position:absolute; left:0; top:0; z-index:1; height:1.5px; width:0; background:#9a3412; opacity:0; transform-origin:0 50%; pointer-events:none; border-radius:1px; }
+    .lab-f { color:#1e3a8a; }
+    .lab-y { color:#9a3412; }
+    .lab-face { color:#9a3412; }
+    .lab-blocked { color:#b91c1c; }
+    .lab-pass { color:#1d4ed8; font-weight:800; }
+    .lab-around { color:#b45309; font-weight:800; }
+    .lab-grad { color:#334155; }
+    .lab-best { color:#1e3a8a; }
+    .lab-C { color:#1e3a8a; font-size:15px; font-weight:700; letter-spacing:0.2px; background:rgba(255,255,255,0.62); }
+    .h3d-steps { display:none; max-width:640px; margin:-14px auto 10px; }
+    #hero3d.has-3d + .h3d-steps { display:block; }
+    .h3d-dots-row { display:flex; justify-content:center; align-items:center; gap:12px; margin-bottom:7px; }
+    .h3d-dots { display:flex; justify-content:center; gap:7px; }
+    .h3d-pause { width:24px; height:24px; padding:0; border-radius:50%; border:1px solid #64748b; background:rgba(255,255,255,0.75); color:#1e3a8a; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; transition:border-color 0.2s, background 0.2s; }
+    .h3d-pause:hover { border-color:#1d4ed8; background:#fff; }
+    .h3d-pause:focus-visible { outline:2px solid #1d4ed8; outline-offset:2px; }
+    .h3d-pause svg { width:10px; height:10px; display:block; }
+    .h3d-pause .ic-play, .h3d-pause.paused .ic-pause { display:none; }
+    .h3d-pause.paused .ic-play { display:block; }
+    .h3d-dots i { width:7px; height:7px; border-radius:50%; background:#cbd5e1; transition:background 0.3s, transform 0.3s; }
+    .h3d-dots i.on { background:#2563eb; transform:scale(1.25); }
+    .h3d-dots i.done { background:#93c5fd; }
+    .h3d-step-text { display:grid; font-size:0.98rem; font-weight:500; color:#1e293b; }
+    .h3d-step-text > span { grid-area:1 / 1; align-self:start; opacity:0; transition:opacity 0.45s ease; }
+    .h3d-step-text b { color:#1d4ed8; font-weight:700; margin-right:6px; }
+    .h3d-steps.all .h3d-dots-row { display:none; }
+    .h3d-steps.all .h3d-step-text { display:block; }
+    .h3d-steps.all ol { text-align:left; display:inline-block; margin:0; padding-left:1.4em; font-size:0.92rem; color:#1e293b; line-height:1.6; }
+    @keyframes logoFadeIn { from { opacity:0; transform: scale(0.9) translateY(10px); } to { opacity:1; transform: scale(1) translateY(0); } }
+    @keyframes fadeUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+
+    .btn-group { display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-top:22px; animation:fadeUp 0.6s ease-out 0.5s both; }
+    .btn { display:inline-flex; align-items:center; gap:7px; padding:10px 22px; border-radius:50px; font-size:0.9rem; font-weight:600; text-decoration:none; transition:all 0.2s; font-family:inherit; }
+    .btn:hover { transform:translateY(-2px); box-shadow:0 6px 20px rgba(0,0,0,0.2); }
+    .btn-primary { background:var(--navy-900); color:#fff; border:1.5px solid var(--navy-900); }
+    .btn-primary:hover { background:var(--blue-600); border-color:var(--blue-600); }
+    .btn-outline { background:rgba(30,58,138,0.06); color:var(--slate-800); border:1.5px solid var(--slate-300); }
+    .btn-outline:hover { border-color:var(--blue-500); background:rgba(37,99,235,0.08); }
+    .btn svg { width:17px; height:17px; flex-shrink:0; }
+
+
+    .container { max-width:940px; margin:0 auto; padding:0 24px; }
+    section { padding:64px 0; }
+    section.alt { background:var(--slate-50); }
+    section h2 { font-size:1.7rem; font-weight:700; margin-bottom:10px; text-align:center; letter-spacing:-0.3px; }
+    section .section-sub { text-align:center; color:var(--slate-500); font-size:1rem; margin-bottom:32px; max-width:640px; margin-left:auto; margin-right:auto; }
+    .prose { font-size:0.95rem; color:var(--slate-500); line-height:1.8; max-width:860px; margin:0 auto; }
+    .prose strong { color:var(--slate-700); }
+    .abstract { font-size:1rem; line-height:1.85; color:var(--slate-700); max-width:820px; margin:0 auto; text-align:justify; }
+    .overview-fig { margin:0 auto 28px; }
+    .overview-fig img, .overview-fig video { width:100%; display:block; mix-blend-mode:multiply; }
+    .duo-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+
+    .app-grid { display:grid; grid-template-columns:1fr; gap:56px; }
+    .app-card .app-body { display:grid; grid-template-columns:1fr 1fr; gap:8px 32px; align-items:start; margin-top:4px; }
+    .app-card .app-body > h3 { grid-column:1 / -1; }
+    @media (max-width:768px) { .app-card .app-body { grid-template-columns:1fr; } }
+    .app-card { display:flex; flex-direction:column; }
+    .app-card .img-box { display:flex; align-items:center; justify-content:center; min-height:220px; }
+    .app-card img, .app-card video { width:100%; display:block; mix-blend-mode:multiply; }
+    .app-card video.rollout { mix-blend-mode:normal; border-radius:8px; }
+    .app-card video.square { max-width:520px; margin:0 auto; }
+    .app-card h3 { font-size:1rem; font-weight:700; color:var(--slate-800); margin:14px 4px 6px; }
+    .res { margin:4px 4px 0 22px; }
+    .res li { font-size:0.86rem; color:var(--slate-500); line-height:1.6; margin-bottom:4px; }
+    .res li strong { color:var(--slate-800); }
+    .mini { width:100%; border-collapse:collapse; font-size:0.82rem; margin:2px 0 8px; font-variant-numeric:tabular-nums; }
+    .mini th { font-weight:600; color:var(--slate-500); text-align:right; padding:4px 6px; border-bottom:1.5px solid var(--slate-300); }
+    .mini th:first-child, .mini td:first-child { text-align:left; }
+    .mini td { text-align:right; padding:3px 6px; color:var(--slate-700); border-bottom:1px solid var(--slate-100); }
+    .mini td.grp { color:var(--slate-400); font-size:0.76rem; font-style:italic; padding-top:6px; }
+    .mini tr.ours td, .mini td.win { color:var(--blue-600); font-weight:700; }
+    .mini tr.total td { font-weight:700; color:var(--slate-800); border-top:1.5px solid var(--slate-300); }
+    .mini tr.total td.win { color:var(--blue-600); }
+
+    pre { background:var(--slate-900); color:var(--slate-300); border-radius:var(--radius-lg); padding:24px; overflow-x:auto; font-size:0.85rem; line-height:1.65; margin-top:16px; }
+    code { font-family:'JetBrains Mono','SF Mono',monospace; }
+    pre .comment { color:var(--slate-500); } pre .string { color:#7dd3fc; } pre .keyword { color:var(--blue-400); }
+    footer { background:var(--slate-900); color:var(--slate-400); padding:36px 20px; text-align:center; font-size:0.85rem; }
+    footer a { color:var(--blue-300); text-decoration:none; } footer a:hover { text-decoration:underline; }
+    footer .sep { margin:0 8px; opacity:0.4; }
+
+    /* ---------- Benchmark charts (stacked, no tabs) ---------- */
+    .bench-stack { display:flex; flex-direction:column; gap:28px; margin-top:8px; }
+    .bench-card { background:var(--white); border:1px solid var(--slate-200); border-radius:var(--radius-lg); padding:24px 24px 20px; box-shadow:0 1px 3px rgba(15,23,42,0.04); }
+    .bench-header { text-align:center; margin-bottom:8px; }
+    .mini-grid { display:grid; grid-template-columns:1fr 1fr; gap:28px 24px; margin-top:4px; }
+    .mini-grid .mini-head { text-align:center; margin-bottom:2px; }
+    .mini-grid .mini-head h4 { font-size:0.95rem; font-weight:700; color:var(--slate-800); margin:0; }
+    .mini-grid .mini-head p { font-size:0.78rem; color:var(--slate-500); margin:2px 0 0; }
+    @media (max-width:860px) { .mini-grid { grid-template-columns:1fr; } }
+    .bench-header h3 { font-size:1.25rem; font-weight:700; color:var(--slate-800); margin:0; }
+    .bench-header p  { font-size:0.88rem; color:var(--slate-500); margin:4px 0 0; }
+    .chart-box { margin:6px auto 0; max-width:680px; }
+    .bt-chart { width:100%; height:auto; display:block; }
+    .bt-chart .draw { stroke-dasharray:1; stroke-dashoffset:1; animation:drawLine 1.4s ease-out forwards; }
+    .bt-chart .pop { opacity:0; animation:popIn 0.3s ease-out forwards; }
+    .bt-chart .grow { transform-box:fill-box; transform-origin:bottom; transform:scaleY(0); animation:growBar 0.7s ease-out forwards; }
+    @keyframes drawLine { to { stroke-dashoffset:0; } }
+    @keyframes popIn { to { opacity:1; } }
+    @keyframes growBar { to { transform:scaleY(1); } }
+    @media (prefers-reduced-motion: reduce) { .bt-chart .draw, .bt-chart .pop, .bt-chart .grow { animation:none; opacity:1; transform:none; stroke-dashoffset:0; } }
+    .chart-legend { display:flex; flex-wrap:wrap; justify-content:center; gap:16px; margin:6px 0 0; font-size:0.82rem; color:var(--slate-700); }
+    .chart-legend span { display:inline-flex; align-items:center; gap:6px; }
+    .chart-legend i { display:inline-block; width:12px; height:12px; border-radius:3px; }
+    .chart-caption { font-style:italic; color:var(--slate-500); font-size:0.88rem; text-align:center; margin:8px 0 0; }
+
+    @media (max-width:768px) {
+      .hero h1 { font-size:2.2rem; }
+      .lead { font-size:0.98rem; }
+      .lead span { display:inline; }
+      .proj-wrap { width:100%; max-width:480px; height:auto; aspect-ratio:420/280; }
+      #hero3d { width:100%; height:auto; aspect-ratio:4/3; max-width:640px; min-height:0; }
+      #hero3d .hero-fallback { width:100%; height:100%; margin:0; }
+      .h3d-label { font-size:12.5px; }
+      .lab-C { font-size:14px; }
+      .lab-f { white-space:normal; width:116px; text-align:center; line-height:1.2; padding:2px 6px; }
+      .h3d-steps { margin-top:-6px; padding:0 8px; }
+      .h3d-step-text { font-size:0.9rem; }
+      .duo-grid, .app-grid { grid-template-columns:1fr; }
+      .bt-chart { min-height:240px; }
+      .abstract { text-align:left; }
+    }
+  </style>
+</head>
+<body>
+<header class="hero">
+  <div class="hero-content">
+    <h1>ASPL</h1>
+    <div class="proj-wrap" id="hero3d" role="img" aria-label="An animation in five steps. The allowed region is a glass cone, like a friction cone, closed by a flat slanted top. 1: The neural network makes an estimate, outside the allowed region. 2: A solver finds the nearest allowed point, the output; ASPL reads which wall it touches. 3: Training pushes the output toward the best allowed answer, marked by a ring. 4: On the flat top, the part of the push along the wall passes and the part across it stops. On the cone&#39;s curved side, the straight part along the cone passes, the part around the curve shrinks, and the outward part stops; this takes one small solve. 5: The output glides along the wall to the best allowed answer and always stays allowed, while the network&#39;s estimate moves with it. The animation alternates between the flat and the curved wall.">
+      <span aria-hidden="true" class="h3d-label lab-f" data-label="f">neural network estimate</span>
+      <span aria-hidden="true" class="h3d-label lab-y" data-label="y">output</span>
+      <span aria-hidden="true" class="h3d-label lab-face" data-label="face">curved wall</span>
+      <span aria-hidden="true" class="h3d-label lab-grad" data-label="grad">training push</span>
+      <span aria-hidden="true" class="h3d-label lab-pass" data-label="pass">passes</span>
+      <span aria-hidden="true" class="h3d-label lab-blocked" data-label="blocked">stops</span>
+      <span aria-hidden="true" class="h3d-label lab-around" data-label="around">shrinks with the curve</span>
+      <span aria-hidden="true" class="h3d-label lab-C" data-label="C">allowed region</span>
+      <span aria-hidden="true" class="h3d-label lab-best" data-label="best">best allowed answer</span>
+      <div class="hero-fallback">
+      <!--
+        Static fallback without WebGL: the neural network estimate outside the allowed
+        region is moved to the nearest allowed point on the wall it touches,
+        then training slides that output along the wall to the best allowed answer.
+      -->
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 280" width="100%" height="100%">
+        <defs>
+          <linearGradient id="polyFill" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#DBEAFE"/><stop offset="100%" stop-color="#BFDBFE"/></linearGradient>
+          <radialGradient id="ptBlue" cx="38%" cy="28%"><stop offset="0%" stop-color="#60A5FA"/><stop offset="45%" stop-color="#2563EB"/><stop offset="100%" stop-color="#1E3A8A"/></radialGradient>
+          <radialGradient id="ptOrange" cx="38%" cy="28%"><stop offset="0%" stop-color="#FDBA74"/><stop offset="45%" stop-color="#EA580C"/><stop offset="100%" stop-color="#9A3412"/></radialGradient>
+          <radialGradient id="glowO" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#EA580C" stop-opacity="0.45"/><stop offset="60%" stop-color="#EA580C" stop-opacity="0.1"/><stop offset="100%" stop-color="#EA580C" stop-opacity="0"/></radialGradient>
+          <filter id="nG" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <filter id="fG" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#EA580C"/></marker>
+        </defs>
+
+        <!-- faint level sets of the training objective -->
+        <g fill="none" stroke="#94A3B8" stroke-width="0.7" opacity="0.18">
+          <ellipse cx="300" cy="150" rx="40" ry="24"/><ellipse cx="300" cy="150" rx="80" ry="48"/>
+          <ellipse cx="300" cy="150" rx="120" ry="72"/><ellipse cx="300" cy="150" rx="160" ry="96"/>
+          <ellipse cx="300" cy="150" rx="200" ry="120"/>
+        </g>
+
+        <!-- feasible set C(x) -->
+        <polygon points="110,220 70,130 150,55 270,80 300,190" fill="url(#polyFill)" stroke="#1E3A8A" stroke-width="2" stroke-linejoin="round" opacity="0">
+          <animate attributeName="opacity" to="0.95" dur="0.5s" begin="0.2s" fill="freeze"/>
+        </polygon>
+        <text x="150" y="150" text-anchor="middle" fill="#1E3A8A" font-size="14" font-weight="700" font-family="DM Sans, sans-serif" opacity="0">allowed region<animate attributeName="opacity" to="0.85" dur="0.4s" begin="0.4s" fill="freeze"/></text>
+
+        <!-- backbone prediction f(x) -->
+        <g filter="url(#nG)" opacity="0"><animate attributeName="opacity" to="1" dur="0.3s" begin="0.8s" fill="freeze"/>
+          <circle cx="380" cy="110" r="8" fill="url(#ptBlue)"/>
+        </g>
+        <text x="404" y="94" text-anchor="end" fill="#1E3A8A" font-size="12" font-weight="700" font-family="DM Sans, sans-serif" opacity="0">neural network estimate<animate attributeName="opacity" to="1" dur="0.3s" begin="0.8s" fill="freeze"/></text>
+
+        <!-- solver iterates converging to the tight face -->
+        <path d="M380,110 L332,152 L318,116 L299,146 L292,128 L285.2,135.8" fill="none" stroke="#60A5FA" stroke-width="2" stroke-dasharray="230" stroke-dashoffset="230" stroke-linejoin="round" opacity="0.9">
+          <animate attributeName="stroke-dashoffset" to="0" dur="1.4s" begin="1.1s" fill="freeze"/>
+        </path>
+        <g fill="#93C5FD" stroke="#1E40AF" stroke-width="1">
+          <circle cx="332" cy="152" r="3" opacity="0"><animate attributeName="opacity" to="1" dur="0.15s" begin="1.4s" fill="freeze"/></circle>
+          <circle cx="318" cy="116" r="3" opacity="0"><animate attributeName="opacity" to="1" dur="0.15s" begin="1.7s" fill="freeze"/></circle>
+          <circle cx="299" cy="146" r="3" opacity="0"><animate attributeName="opacity" to="1" dur="0.15s" begin="1.95s" fill="freeze"/></circle>
+          <circle cx="292" cy="128" r="3" opacity="0"><animate attributeName="opacity" to="1" dur="0.15s" begin="2.2s" fill="freeze"/></circle>
+        </g>
+
+        <!-- rho-ball: inside it, the tight set is final -->
+        <circle cx="290" cy="136" r="26" fill="none" stroke="#EA580C" stroke-width="1.3" stroke-dasharray="4 4" opacity="0">
+          <animate attributeName="opacity" to="0.85" dur="0.4s" begin="1.9s" fill="freeze"/>
+        </circle>
+
+        <!-- tight face lights up -->
+        <line x1="270" y1="80" x2="300" y2="190" stroke="#EA580C" stroke-width="5" stroke-linecap="round" opacity="0" filter="url(#fG)">
+          <animate attributeName="opacity" to="1" dur="0.4s" begin="2.2s" fill="freeze"/>
+        </line>
+        <text x="306" y="200" fill="#C2410C" font-size="12.5" font-weight="700" font-family="DM Sans, sans-serif" opacity="0">wall it touches<animate attributeName="opacity" to="1" dur="0.4s" begin="2.4s" fill="freeze"/></text>
+
+        <!-- best allowed answer on the wall (the training target's nearest point on it) -->
+        <g opacity="0"><animate attributeName="opacity" to="1" dur="0.4s" begin="3.0s" fill="freeze"/>
+          <circle cx="289" cy="149.7" r="6.5" fill="none" stroke="#1E3A8A" stroke-width="1.8"/>
+          <circle cx="289" cy="149.7" r="2" fill="#1E3A8A"/>
+          <text x="300" y="166" fill="#1E3A8A" font-size="11.5" font-weight="700" font-family="DM Sans, sans-serif">best allowed answer</text>
+        </g>
+
+        <!-- the output y, then training slides it once along the wall to the best allowed answer -->
+        <g opacity="0"><animate attributeName="opacity" to="1" dur="0.3s" begin="2.5s" fill="freeze"/>
+          <circle cx="285.2" cy="135.8" r="16" fill="url(#glowO)">
+            <animate attributeName="cx" from="285.2" to="289" dur="2.4s" begin="3.6s" fill="freeze" calcMode="spline" keySplines="0.4 0 0.2 1" keyTimes="0;1"/>
+            <animate attributeName="cy" from="135.8" to="149.7" dur="2.4s" begin="3.6s" fill="freeze" calcMode="spline" keySplines="0.4 0 0.2 1" keyTimes="0;1"/>
+          </circle>
+          <circle cx="285.2" cy="135.8" r="7" fill="url(#ptOrange)" filter="url(#nG)">
+            <animate attributeName="cx" from="285.2" to="289" dur="2.4s" begin="3.6s" fill="freeze" calcMode="spline" keySplines="0.4 0 0.2 1" keyTimes="0;1"/>
+            <animate attributeName="cy" from="135.8" to="149.7" dur="2.4s" begin="3.6s" fill="freeze" calcMode="spline" keySplines="0.4 0 0.2 1" keyTimes="0;1"/>
+          </circle>
+        </g>
+        <text x="252" y="141" text-anchor="end" fill="#9A3412" font-size="12.5" font-weight="700" font-family="DM Sans, sans-serif" opacity="0">output<animate attributeName="opacity" to="1" dur="0.3s" begin="2.6s" fill="freeze"/></text>
+
+        <!-- the kept part of the push, along the wall toward the best allowed answer -->
+        <g opacity="0"><animate attributeName="opacity" to="0.9" dur="0.4s" begin="3.2s" fill="freeze"/>
+          <line x1="279" y1="118" x2="281.4" y2="127" stroke="#EA580C" stroke-width="1.6" marker-end="url(#arr)"/>
+        </g>
+
+        <!-- backward: one small solve -->
+        <g opacity="0"><animate attributeName="opacity" to="1" dur="0.4s" begin="3.0s" fill="freeze"/>
+          <path d="M282,128 C250,40 140,20 60,48" fill="none" stroke="#EA580C" stroke-width="1.8" stroke-dasharray="6 5" marker-end="url(#arr)">
+            <animate attributeName="stroke-dashoffset" values="0;-22" dur="1.2s" begin="3.0s" repeatCount="indefinite"/>
+          </path>
+          <text x="22" y="32" fill="#C2410C" font-size="11.5" font-weight="600" font-family="DM Sans, sans-serif">ASPL passes the push along the wall</text>
+        </g>
+      </svg>
+      </div>
+    </div>
+    <div class="h3d-steps" id="hero3d-steps">
+      <div class="h3d-dots-row">
+        <div class="h3d-dots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+        <button type="button" class="h3d-pause" aria-pressed="false" aria-label="Pause animation" title="Pause animation"><svg class="ic-pause" viewBox="0 0 10 10" aria-hidden="true"><rect x="1.5" y="1" width="2.5" height="8" rx="0.6" fill="currentColor"/><rect x="6" y="1" width="2.5" height="8" rx="0.6" fill="currentColor"/></svg><svg class="ic-play" viewBox="0 0 10 10" aria-hidden="true"><path d="M2.2 1.2 L8.8 5 L2.2 8.8 Z" fill="currentColor"/></svg></button>
+      </div>
+      <div class="h3d-step-text" aria-hidden="true"></div>
+    </div>
+    <div class="btn-group">
+      <a class="btn btn-primary" href="paper.pdf" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 2l5 5h-5V4zM6 20V4h5v7h7v9H6z"/></svg> Paper</a>
+      <a class="btn btn-outline" href="https://huggingface.co/ASLP-Net" target="_blank" rel="noopener"><svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 95 88" fill="none"><path fill="#FFD21E" d="M47.21 76.5a34.75 34.75 0 1 0 0-69.5 34.75 34.75 0 0 0 0 69.5Z"/><path fill="#FF9D0B" d="M81.96 41.75a34.75 34.75 0 1 0-69.5 0 34.75 34.75 0 0 0 69.5 0Zm-73.5 0a38.75 38.75 0 1 1 77.5 0 38.75 38.75 0 0 1-77.5 0Z"/><path fill="#3A3B45" d="M58.5 32.3c1.28.44 1.78 3.06 3.07 2.38a5 5 0 1 0-6.76-2.07c.61 1.15 2.55-.72 3.7-.32ZM34.95 32.3c-1.28.44-1.79 3.06-3.07 2.38a5 5 0 1 1 6.76-2.07c-.61 1.15-2.56-.72-3.7-.32Z"/><path fill="#FF323D" d="M46.96 56.29c9.83 0 13-8.76 13-13.26 0-2.34-1.57-1.6-4.09-.36-2.33 1.15-5.46 2.74-8.9 2.74-7.19 0-13-6.88-13-2.38s3.16 13.26 13 13.26Z"/><path fill="#3A3B45" fill-rule="evenodd" d="M39.43 54a8.7 8.7 0 0 1 5.3-4.49c.4-.12.81.57 1.24 1.28.4.68.82 1.37 1.24 1.37.45 0 .9-.68 1.33-1.35.45-.7.89-1.38 1.32-1.25a8.61 8.61 0 0 1 5 4.17c3.73-2.94 5.1-7.74 5.1-10.7 0-2.34-1.57-1.6-4.09-.36l-.14.07c-2.31 1.15-5.39 2.67-8.77 2.67s-6.45-1.52-8.77-2.67c-2.6-1.29-4.23-2.1-4.23.29 0 3.05 1.46 8.06 5.47 10.97Z" clip-rule="evenodd"/><path fill="#FF9D0B" d="M70.71 37a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5ZM24.21 37a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5ZM17.52 48c-1.62 0-3.06.66-4.07 1.87a5.97 5.97 0 0 0-1.33 3.76 7.1 7.1 0 0 0-1.94-.3c-1.55 0-2.95.59-3.94 1.66a5.8 5.8 0 0 0-.8 7 5.3 5.3 0 0 0-1.79 2.82c-.24.9-.48 2.8.8 4.74a5.22 5.22 0 0 0-.37 5.02c1.02 2.32 3.57 4.14 8.52 6.1 3.07 1.22 5.89 2 5.91 2.01a44.33 44.33 0 0 0 10.93 1.6c5.86 0 10.05-1.8 12.46-5.34 3.88-5.69 3.33-10.9-1.7-15.92-2.77-2.78-4.62-6.87-5-7.77-.78-2.66-2.84-5.62-6.25-5.62a5.7 5.7 0 0 0-4.6 2.46c-1-1.26-1.98-2.25-2.86-2.82A7.4 7.4 0 0 0 17.52 48Zm0 4c.51 0 1.14.22 1.82.65 2.14 1.36 6.25 8.43 7.76 11.18.5.92 1.37 1.31 2.14 1.31 1.55 0 2.75-1.53.15-3.48-3.92-2.93-2.55-7.72-.68-8.01.08-.02.17-.02.24-.02 1.7 0 2.45 2.93 2.45 2.93s2.2 5.52 5.98 9.3c3.77 3.77 3.97 6.8 1.22 10.83-1.88 2.75-5.47 3.58-9.16 3.58-3.81 0-7.73-.9-9.92-1.46-.11-.03-13.45-3.8-11.76-7 .28-.54.75-.76 1.34-.76 2.38 0 6.7 3.54 8.57 3.54.41 0 .7-.17.83-.6.79-2.85-12.06-4.05-10.98-8.17.2-.73.71-1.02 1.44-1.02 3.14 0 10.2 5.53 11.68 5.53.11 0 .2-.03.24-.1.74-1.2.33-2.04-4.9-5.2-5.21-3.16-8.88-5.06-6.8-7.33.24-.26.58-.38 1-.38 3.17 0 10.66 6.82 10.66 6.82s2.02 2.1 3.25 2.1c.28 0 .52-.1.68-.38.86-1.46-8.06-8.22-8.56-11.01-.34-1.9.24-2.85 1.31-2.85Z"/><path fill="#FFD21E" d="M38.6 76.69c2.75-4.04 2.55-7.07-1.22-10.84-3.78-3.77-5.98-9.3-5.98-9.3s-.82-3.2-2.69-2.9c-1.87.3-3.24 5.08.68 8.01 3.91 2.93-.78 4.92-2.29 2.17-1.5-2.75-5.62-9.82-7.76-11.18-2.13-1.35-3.63-.6-3.13 2.2.5 2.79 9.43 9.55 8.56 11-.87 1.47-3.93-1.71-3.93-1.71s-9.57-8.71-11.66-6.44c-2.08 2.27 1.59 4.17 6.8 7.33 5.23 3.16 5.64 4 4.9 5.2-.75 1.2-12.28-8.53-13.36-4.4-1.08 4.11 11.77 5.3 10.98 8.15-.8 2.85-9.06-5.38-10.74-2.18-1.7 3.21 11.65 6.98 11.76 7.01 4.3 1.12 15.25 3.49 19.08-2.12Z"/><path fill="#FF9D0B" d="M77.4 48c1.62 0 3.07.66 4.07 1.87a5.97 5.97 0 0 1 1.33 3.76 7.1 7.1 0 0 1 1.95-.3c1.55 0 2.95.59 3.94 1.66a5.8 5.8 0 0 1 .8 7 5.3 5.3 0 0 1 1.78 2.82c.24.9.48 2.8-.8 4.74a5.22 5.22 0 0 1 .37 5.02c-1.02 2.32-3.57 4.14-8.51 6.1-3.08 1.22-5.9 2-5.92 2.01a44.33 44.33 0 0 1-10.93 1.6c-5.86 0-10.05-1.8-12.46-5.34-3.88-5.69-3.33-10.9 1.7-15.92 2.78-2.78 4.63-6.87 5.01-7.77.78-2.66 2.83-5.62 6.24-5.62a5.7 5.7 0 0 1 4.6 2.46c1-1.26 1.98-2.25 2.87-2.82A7.4 7.4 0 0 1 77.4 48Zm0 4c-.51 0-1.13.22-1.82.65-2.13 1.36-6.25 8.43-7.76 11.18a2.43 2.43 0 0 1-2.14 1.31c-1.54 0-2.75-1.53-.14-3.48 3.91-2.93 2.54-7.72.67-8.01a1.54 1.54 0 0 0-.24-.02c-1.7 0-2.45 2.93-2.45 2.93s-2.2 5.52-5.97 9.3c-3.78 3.77-3.98 6.8-1.22 10.83 1.87 2.75 5.47 3.58 9.15 3.58 3.82 0 7.73-.9 9.93-1.46.1-.03 13.45-3.8 11.76-7-.29-.54-.75-.76-1.34-.76-2.38 0-6.71 3.54-8.57 3.54-.42 0-.71-.17-.83-.6-.8-2.85 12.05-4.05 10.97-8.17-.19-.73-.7-1.02-1.44-1.02-3.14 0-10.2 5.53-11.68 5.53-.1 0-.19-.03-.23-.1-.74-1.2-.34-2.04 4.88-5.2 5.23-3.16 8.9-5.06 6.8-7.33-.23-.26-.57-.38-.98-.38-3.18 0-10.67 6.82-10.67 6.82s-2.02 2.1-3.24 2.1a.74.74 0 0 1-.68-.38c-.87-1.46 8.05-8.22 8.55-11.01.34-1.9-.24-2.85-1.31-2.85Z"/><path fill="#FFD21E" d="M56.33 76.69c-2.75-4.04-2.56-7.07 1.22-10.84 3.77-3.77 5.97-9.3 5.97-9.3s.82-3.2 2.7-2.9c1.86.3 3.23 5.08-.68 8.01-3.92 2.93.78 4.92 2.28 2.17 1.51-2.75 5.63-9.82 7.76-11.18 2.13-1.35 3.64-.6 3.13 2.2-.5 2.79-9.42 9.55-8.55 11 .86 1.47 3.92-1.71 3.92-1.71s9.58-8.71 11.66-6.44c2.08 2.27-1.58 4.17-6.8 7.33-5.23 3.16-5.63 4-4.9 5.2.75 1.2 12.28-8.53 13.36-4.4 1.08 4.11-11.76 5.3-10.97 8.15.8 2.85 9.05-5.38 10.74-2.18 1.69 3.21-11.65 6.98-11.76 7.01-4.31 1.12-15.26 3.49-19.08-2.12Z"/></svg> Code and data</a>
+    </div>
+  </div>
+</header>
+
+<!-- ============ METHOD ============ -->
+<section>
+  <div class="container">
+    <h2>How ASPL Works</h2>
+    <p class="lead">
+      <span>Projection layers enforce hard constraints exactly, but their gradient degrades as more constraints become tight.</span>
+      <span>ASPL differentiates through the <em>active manifold</em> instead, for any forward solver, with provable guarantees and better accuracy or cost on QPs, motion planning and real-robot IK.</span>
+    </p>
+    <div class="overview-fig"><video src="media/overview.mp4" poster="media/overview_poster.png" autoplay muted loop playsinline aria-label="ASPL overview: forward finds the tight face, backward reuses it with one small solve"></video></div>
+    <p class="section-sub" style="max-width:none; margin-top:24px;">The tight face is fixed in finitely many steps, and the backward pass is one small solve on blocked and curved directions.</p>
+  </div>
+</section>
+
+<!-- ============ BENCHMARKS ============ -->
+<!-- ============ SYNTHETIC EXPERIMENTS ============ -->
+<section>
+  <div class="container">
+    <h2>Synthetic Experiments</h2>
+    <div class="bench-stack">
+      <div class="bench-card">
+        <div class="bench-header">
+          <h3>Parametric Quadratic Programs</h3>
+        </div>
+        <div class="mini-grid" id="qp-grid"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ INVERSE KINEMATICS ============ -->
+<section>
+  <div class="container">
+    <h2>Inverse Kinematics for Robot Teleoperation</h2>
+    <div class="app-grid">
+      <div class="app-card">
+        <div class="mini-grid">
+          <div class="mini-chart"><div class="mini-head"><h4>Vega-1</h4></div>
+            <div class="img-box"><video class="rollout" src="media/ik_vega.mp4" poster="media/ik_vega.jpg" autoplay muted loop playsinline aria-label="Closed-loop IK on Vega-1: head camera, operator command, and ASPL with the per-frame end-effector error"></video></div>
+          </div>
+          <div class="mini-chart"><div class="mini-head"><h4>G1 table</h4></div>
+            <div class="img-box"><video class="rollout" src="media/ik_g1_table.mp4" poster="media/ik_g1_table.jpg" autoplay muted loop playsinline aria-label="Closed-loop IK on G1 at the table: head camera, operator command, and ASPL with the per-frame end-effector error"></video></div>
+          </div>
+          <div class="mini-chart"><div class="mini-head"><h4>G1 walking</h4></div>
+            <div class="img-box"><video class="rollout" src="media/ik_g1_walk.mp4" poster="media/ik_g1_walk.jpg" autoplay muted loop playsinline aria-label="Closed-loop IK on G1 walking: head camera, operator command, and ASPL with the per-frame end-effector error"></video></div>
+          </div>
+          <div class="mini-chart">
+            <div class="mini-head"><h4>Closed-loop IK, real robot logs</h4></div>
+            <div class="mini-grid" id="ikbar-grid" style="grid-template-columns:1fr; gap:18px;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bench-stack" style="margin-top:28px;">
+      <div class="bench-card">
+        <div class="bench-header">
+          <h3>Amortized Inverse Kinematics</h3>
+          <p class="section-sub">Same network and data on both robots; only the output layer changes. ASPL meets the task to ~10⁻¹¹–10⁻¹² and the joint limits at the same time, at a few µs per frame, where regression misses the limits and clipping breaks the task.</p>
+        </div>
+        <div class="mini-grid" id="ik-grid"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CONSTRAINED ROBOT MANIPULATION ============ -->
+<section>
+  <div class="container">
+    <h2>Constrained Transformers for Robot Manipulation (RoboTwin&nbsp;2.0)</h2>
+    <div class="app-grid">
+      <div class="app-card">
+        <div class="mini-grid">
+          <div class="mini-chart"><div class="mini-head"><h4>lift_pot</h4></div>
+            <div class="img-box"><video class="rollout" src="media/fm_lift_pot.mp4" poster="media/fm_lift_pot.jpg" autoplay muted loop playsinline aria-label="ManiFlow (left) and ASPL (right) on lift_pot, same episode"></video></div>
+          </div>
+          <div class="mini-chart"><div class="mini-head"><h4>open_laptop</h4></div>
+            <div class="img-box"><video class="rollout" src="media/fm_open_laptop.mp4" poster="media/fm_open_laptop.jpg" autoplay muted loop playsinline aria-label="ManiFlow (left) and ASPL (right) on open_laptop, same episode"></video></div>
+          </div>
+          <div class="mini-chart"><div class="mini-head"><h4>pick_dual_bottles</h4></div>
+            <div class="img-box"><video class="rollout" src="media/fm_pick_dual_bottles.mp4" poster="media/fm_pick_dual_bottles.jpg" autoplay muted loop playsinline aria-label="ManiFlow (left) and ASPL (right) on pick_dual_bottles, same episode"></video></div>
+          </div>
+          <div class="mini-chart"><div class="mini-head"><h4>put_object_cabinet</h4></div>
+            <div class="img-box"><video class="rollout" src="media/fm_put_object_cabinet.mp4" poster="media/fm_put_object_cabinet.jpg" autoplay muted loop playsinline aria-label="ManiFlow (left) and ASPL (right) on put_object_cabinet, same episode"></video></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bench-stack" style="margin-top:28px;">
+      <div class="bench-card">
+        <div class="mini-grid" id="fmfail-grid"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ MOTION PLANNING ============ -->
+<section>
+  <div class="container">
+    <h2>Motion Planning</h2>
+    <div class="app-grid">
+      <div class="app-card">
+        <div class="img-box"><video src="media/mp_r5h25.mp4" poster="media/mp_r5h25.jpg" autoplay muted loop playsinline aria-label="Five robots: Pi-net (left) and ASPL (right) predicted trajectories against the ground truth"></video></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+(function(){
+  // ── Paper numbers ────────────────────────────────
+  //   QP : Table "tab:qp-results" (d=2000, batch 64, ASPL medians over 4 seeds)
+  //   IK : Table "tab:ik-amortized" (1024 held-out frames)
+  //   FM : Figure "fig:fm" (100 fixed episodes per task)
+  const C = { aspl:"#2563eb", aspl2:"#60a5fa", pinet:"#ea580c", jax:"#64748b", base:"#cbd5e1", mid:"#94a3b8" };
+  const RATIOS = [0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45];
+  const IKM = ["ASPL", "Pink", "Mink", "PyRoki", "cuRobo", "MJINX"];
+  const IKC = [C.aspl, C.pinet, "#f59e0b", C.jax, C.mid, C.base];
+
+  const BENCH = {
+    qp: {
+      title: "Parametric Quadratic Programs",
+      kind: "line",
+      sub: { RS:"Relative suboptimality", Time:"Training wall-clock" },
+      subDefault: "RS",
+      xLabel: "active-set ratio",
+      metricLabel: { RS:"test RS (log)", Time:"seconds (log)" },
+      subtitle: { RS:"d = 2000 · test relative suboptimality vs. active-set ratio", Time:"d = 2000 · total training wall-clock vs. active-set ratio" },
+      series: {
+        RS: [
+          { name:"ASPL (CG)",   color:C.aspl,  y:[1.698e-4,1.628e-4,1.501e-4,1.792e-4,1.573e-4,1.723e-4,2.560e-4,1.461e-4,1.543e-4] },
+          { name:"ASPL (Chol)", color:C.aspl2, y:[1.923e-4,1.636e-4,1.904e-4,1.929e-4,1.763e-4,1.599e-4,2.276e-4,1.507e-4,1.504e-4] },
+          { name:"Πnet",   color:C.pinet, y:[1.620e-4,1.910e-4,2.120e-4,6.281e-4,2.850e-3,1.489e-2,5.718e-2,9.618e-2,1.650e-1] },
+          { name:"JAXOpt",      color:C.jax,   y:[1.880e-4,2.623e-4,3.208e-4,4.943e-4,6.798e-4,1.316e-3,6.573e-4,1.347e-3,1.025e-3] },
+        ],
+        Time: [
+          { name:"ASPL (CG)",   color:C.aspl,  y:[84,90,104,116,127,135,150,162,183] },
+          { name:"ASPL (Chol)", color:C.aspl2, y:[90,105,128,147,178,203,239,267,317] },
+          { name:"Πnet",   color:C.pinet, y:[172,171,184,176,178,186,193,193,193] },
+          { name:"JAXOpt",      color:C.jax,   y:[7886,8217,8135,7938,8285,9560,10630,11547,14049] },
+        ],
+      },
+      yRange: { RS:[1e-4,1], Time:[50,20000] },
+      caption: {
+        RS:   "",
+        Time: "",
+      }
+    },
+    ik: {
+      title: "Amortized Inverse Kinematics",
+      kind: "bar",
+      methods: ["Regression", "Clip to limits", "ASPL (inference)", "ASPL (trained)"],
+      colors:  [C.base, C.mid, C.aspl2, C.aspl],
+      sub: { VegaErr:"Vega-1 · task error", VegaViol:"Vega-1 · limit violation", G1Err:"G1 · task error", G1Viol:"G1 · limit violation" },
+      subDefault: "VegaErr",
+      metricLabel: { VegaErr:"max task error (log)", VegaViol:"frames violating a limit (%)", G1Err:"max task error (log)", G1Viol:"frames violating a limit (%)" },
+      subtitle: { VegaErr:"Dexmate Vega-1 (17 DoF) · 1024 held-out frames", VegaViol:"Dexmate Vega-1 (17 DoF) · 1024 held-out frames", G1Err:"Unitree G1 (35 DoF) · 1024 held-out frames", G1Viol:"Unitree G1 (35 DoF) · 1024 held-out frames" },
+      series: {
+        VegaErr:  [3.3e+0, 1.7e+0, 2.9e-12, 3.3e-12],
+        VegaViol: [67.2, 0.0, 0.4, 0.2],
+        G1Err:    [3.0e+0, 7.0e+0, 3.3e-11, 3.4e-11],
+        G1Viol:   [77.5, 0.0, 0.2, 0.1],
+      },
+      log: { VegaErr:true, G1Err:true },
+      yRange: { VegaErr:[1e-13,1e2], G1Err:[1e-13,1e2], VegaViol:[0,100], G1Viol:[0,100] },
+      caption: { VegaErr: "", VegaViol: "", G1Err: "", G1Viol: "" }
+    },
+    ikbar: {
+      title: "Closed-loop IK, real robot logs",
+      kind: "grouped",
+      groups: ["Vega-1", "G1 table", "G1 walk"],
+      sub: { Err: "End-effector error (mm)", Lat: "Time per control step (ms)" },
+      subDefault: "Err",
+      seriesNames: { Err: IKM, Lat: IKM },
+      colors: { Err: IKC, Lat: IKC },
+      metricLabel: { Err: "error (mm, log)", Lat: "ms (log)" },
+      subtitle: { Err: "Held-out teleoperation logs, same per-step joint box for every method", Lat: "Batch 1; ASPL, Pink and Mink on one CPU core, the rest on GPU" },
+      series: {
+        Err: [[0.040, 0.069, 0.65, 0.98, 0.82, 0.99], [0.017, 0.050, 0.051, 0.095, 0.11, 0.94], [0.012, 0.12, 0.13, 0.030, 0.053, 7.9]],
+        Lat: [[0.12, 0.37, 0.46, 54, 8.8, 8.4], [0.31, 1.3, 0.58, 47, 18, 24], [0.20, 1.2, 0.75, 60, 36, 30]],
+      },
+      log: { Err: true, Lat: true },
+      yRange: { Err: [0.01, 10], Lat: [0.1, 100] },
+      caption: { Err: "", Lat: "PyRoki clips its output to the box and cuRobo treats the box as a soft cost; PyRoki takes longer than the 33 ms control period on every robot, cuRobo on G1 walk." },
+    },
+    fmfail: {
+      title: "Task-Specific Inference-Time Constraints",
+      kind: "grouped",
+      groups: ["open_laptop", "lift_pot", "pick_dual_bottles", "put_object_cabinet"],
+      seriesNames: ["ManiFlow", "ASPL"],
+      colors: [C.base, C.aspl],
+      sub: { SR:"" },
+      subDefault: "SR",
+      metricLabel: { SR:"success rate (%)" },
+      subtitle: { SR:"" },
+      series: { SR: [[50,84],[64,89],[68,77],[23,46]] },
+      yRange: { SR:[0,100] },
+      caption: {
+        SR: "A constraint built from each task's own failure mode, read only from the point cloud and the robot's own state at inference. lift_pot is from 89 of 100 episodes tested so far, with no regressions.",
+      }
+    }
+  };
+
+  const W = 680, H = 330, padL = 70, padR = 24, padT = 34, padB = 60;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const FONT = 'font-family="DM Sans, sans-serif"';
+
+  function sup(n) {
+    const m = {"-":"⁻","0":"⁰","1":"¹","2":"²","3":"³","4":"⁴","5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹"};
+    return String(n).split("").map(c => m[c] || c).join("");
+  }
+  function fmtTick(v, log) {
+    if (!log) return v.toFixed(0);
+    const e = Math.round(Math.log10(v));
+    if (e >= 0 && e <= 4) return String(Math.pow(10, e));
+    return "10" + sup(e);
+  }
+  function fmtVal(v, log) {
+    if (!log) return (Math.abs(v) >= 100 || Number.isInteger(v)) ? String(v) : v.toFixed(1);
+    if (v >= 1e-2 && v < 1e3) return v.toPrecision(2);
+    const e = Math.floor(Math.log10(v)), m = v / Math.pow(10, e);
+    return m.toFixed(1) + "e" + e;
+  }
+  function makeScale(lo, hi, log) {
+    if (log) {
+      const a = Math.log10(lo), b = Math.log10(hi);
+      return v => padT + plotH - (Math.log10(Math.max(v, lo)) - a) / (b - a) * plotH;
+    }
+    return v => padT + plotH - (v - lo) / (hi - lo) * plotH;
+  }
+  function axes(lo, hi, log, label) {
+    let s = "";
+    let ticks = [];
+    if (log) {
+      const a = Math.ceil(Math.log10(lo)), b = Math.floor(Math.log10(hi));
+      const step = (b - a) > 8 ? 3 : 1;
+      for (let e = a; e <= b; e += step) ticks.push(Math.pow(10, e));
+    } else {
+      for (let g = 0; g <= 4; g++) ticks.push(lo + (hi - lo) * g / 4);
+    }
+    const y = makeScale(lo, hi, log);
+    ticks.forEach(t => {
+      s += `<line x1="${padL}" y1="${y(t)}" x2="${W - padR}" y2="${y(t)}" stroke="#e2e8f0" stroke-width="1"/>`;
+      s += `<text x="${padL - 10}" y="${y(t) + 4}" text-anchor="end" fill="#94a3b8" font-size="11" ${FONT}>${fmtTick(t, log)}</text>`;
+    });
+    s += `<line x1="${padL}" y1="${padT + plotH}" x2="${W - padR}" y2="${padT + plotH}" stroke="#0f172a" stroke-width="1.5"/>`;
+    s += `<text x="16" y="${padT + plotH/2}" fill="#64748b" font-size="11.5" ${FONT} transform="rotate(-90 16 ${padT + plotH/2})" text-anchor="middle">${label}</text>`;
+    return s;
+  }
+  function legend(el, items) {
+    el.innerHTML = items.map(([n, c]) => `<span><i style="background:${c}"></i>${n}</span>`).join("");
+  }
+
+  function renderLine(cfg, sub, els) {
+    const [lo, hi] = cfg.yRange[sub];
+    const y = makeScale(lo, hi, true);
+    const x = i => padL + 20 + (plotW - 40) * i / (RATIOS.length - 1);
+    let s = axes(lo, hi, true, cfg.metricLabel[sub]);
+    RATIOS.forEach((r, i) => {
+      s += `<text x="${x(i)}" y="${padT + plotH + 20}" text-anchor="middle" fill="#334155" font-size="11.5" ${FONT}>${r.toFixed(2)}</text>`;
+    });
+    s += `<text x="${padL + plotW/2}" y="${padT + plotH + 44}" text-anchor="middle" fill="#64748b" font-size="11.5" ${FONT}>${cfg.xLabel}</text>`;
+    // draw ASPL last so it sits on top
+    const ser = cfg.series[sub].slice().reverse();
+    ser.forEach(sr => {
+      const pts = sr.y.map((v, i) => `${x(i)},${y(v)}`).join(" ");
+      const isA = sr.name.startsWith("ASPL");
+      s += `<polyline class="draw" pathLength="1" points="${pts}" fill="none" stroke="${sr.color}" stroke-width="${isA ? 3 : 2.2}" stroke-linejoin="round"/>`;
+      sr.y.forEach((v, i) => {
+        s += isA ? `<circle class="pop" style="animation-delay:${0.15 + i * 0.12}s" cx="${x(i)}" cy="${y(v)}" r="4" fill="${sr.color}" stroke="#fff" stroke-width="1.5"><title>${sr.name}: ${v}</title></circle>`
+                 : `<rect class="pop" style="animation-delay:${0.15 + i * 0.12}s" x="${x(i) - 3.5}" y="${y(v) - 3.5}" width="7" height="7" fill="${sr.color}" stroke="#fff" stroke-width="1.2"><title>${sr.name}: ${v}</title></rect>`;
+      });
+    });
+    els.chart.innerHTML = s;
+    legend(els.legend, cfg.series[sub].map(sr => [sr.name, sr.color]));
+  }
+
+  function renderBar(cfg, sub, els) {
+    const log = !!(cfg.log && cfg.log[sub]);
+    const [lo, hi] = cfg.yRange[sub];
+    const y = makeScale(lo, hi, log);
+    const vals = cfg.series[sub], n = cfg.methods.length;
+    const slot = plotW / n, bw = slot * 0.62;
+    let s = axes(lo, hi, log, cfg.metricLabel[sub]);
+    cfg.methods.forEach((m, i) => {
+      const v = vals[i], bx = padL + slot * i + (slot - bw) / 2;
+      const top = y(v), h = padT + plotH - top;
+      const isA = m.startsWith("ASPL");
+      s += `<rect class="grow" style="animation-delay:${i * 0.12}s" x="${bx}" y="${top}" width="${bw}" height="${Math.max(h, 0)}" rx="3" fill="${cfg.colors[i]}"><title>${m}: ${v}</title></rect>`;
+      s += `<text x="${bx + bw/2}" y="${top - 8}" text-anchor="middle" fill="#0f172a" font-size="13" font-weight="700" ${FONT}>${fmtVal(v, log)}</text>`;
+      s += `<text x="${bx + bw/2}" y="${padT + plotH + 22}" text-anchor="middle" fill="${isA ? '#2563eb' : '#334155'}" font-size="12.5" font-weight="${isA ? 700 : 500}" ${FONT}>${m}</text>`;
+    });
+    els.chart.innerHTML = s;
+    els.legend.innerHTML = "";
+  }
+
+  function renderGrouped(cfg, sub, els) {
+    const [lo, hi] = cfg.yRange[sub];
+    const log = !!(cfg.log && cfg.log[sub]);
+    const names = Array.isArray(cfg.seriesNames) ? cfg.seriesNames : cfg.seriesNames[sub];
+    const cols = Array.isArray(cfg.colors) ? cfg.colors : cfg.colors[sub];
+    const y = makeScale(lo, hi, log);
+    const groups = cfg.groups, k = names.length;
+    const gap = k > 3 ? 2 : 4;
+    const slot = plotW / groups.length, bw = Math.min(slot * 0.3, slot * 0.86 / k - gap);
+    const fs = k > 3 ? 8.5 : 13;
+    let s = axes(lo, hi, log, cfg.metricLabel[sub]);
+    groups.forEach((g, gi) => {
+      const x0 = padL + slot * gi + (slot - (bw + gap) * k + gap) / 2;
+      cfg.series[sub][gi].forEach((v, si) => {
+        const bx = x0 + si * (bw + gap), top = y(v);
+        s += `<rect class="grow" style="animation-delay:${gi * 0.15 + si * 0.08}s" x="${bx}" y="${top}" width="${bw}" height="${padT + plotH - top}" rx="3" fill="${cols[si]}"><title>${names[si]}: ${v}</title></rect>`;
+        s += `<text x="${bx + bw/2}" y="${top - 6}" text-anchor="middle" fill="#0f172a" font-size="${fs}" font-weight="700" ${FONT}>${fmtVal(v, log)}</text>`;
+      });
+      s += `<text x="${padL + slot * gi + slot/2}" y="${padT + plotH + 22}" text-anchor="middle" fill="#334155" font-size="12" ${FONT}>${g.replace(/_/g, "_​")}</text>`;
+    });
+    els.chart.innerHTML = s;
+    legend(els.legend, names.map((n, i) => [n, cols[i]]));
+  }
+
+  function mountGrid(key) {
+    const cfg = BENCH[key];
+    const grid = document.getElementById(`${key}-grid`);
+    const keys = Object.keys(cfg.sub);
+    grid.innerHTML = keys.map(k => `
+      <div class="mini-chart"${keys.length === 1 ? ' style="grid-column:1/-1"' : ''}>
+        ${cfg.sub[k] || cfg.subtitle[k] ? `<div class="mini-head"><h4>${cfg.sub[k]}</h4><p>${cfg.subtitle[k]}</p></div>` : ""}
+        <div class="chart-box"><svg class="bt-chart" viewBox="0 0 680 330" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${cfg.sub[k] || cfg.title}"></svg></div>
+        <div class="chart-legend"></div>
+        <p class="chart-caption"></p>
+      </div>`).join("");
+    keys.forEach((k, i) => {
+      const panel = grid.children[i];
+      const els = { chart: panel.querySelector("svg"), legend: panel.querySelector(".chart-legend") };
+      if (cfg.kind === "line") renderLine(cfg, k, els);
+      else if (cfg.kind === "grouped") renderGrouped(cfg, k, els);
+      else renderBar(cfg, k, els);
+      panel.querySelector(".chart-caption").textContent = cfg.caption[k] || "";
+    });
+  }
+
+  ["qp", "ik", "ikbar", "fmfail"].forEach(mountGrid);
+})();
+</script>
+
+<!-- ============ QUICK START ============ -->
+<section>
+  <div class="container">
+    <h2>Quick Start</h2>
+    <p class="section-sub">One library, with the robotics applications as separate packages that use it</p>
+<pre><code><span class="comment"># Clone from Hugging Face</span>
+git clone https://huggingface.co/ASLP-Net/ASPL
+<span class="keyword">cd</span> ASPL
+
+<span class="comment"># Install the library (plus optional reference solvers / JAX CUDA plugins)</span>
+pip install -e aspl
+pip install -e <span class="string">"aspl[solvers]"</span>
+pip install -e <span class="string">"aspl[cuda]"</span>
+
+<span class="comment"># Check the layer without any data: task residual ~1e-14, QP objective to 1e-8,</span>
+<span class="comment"># and an adjoint that matches central finite differences</span>
+<span class="keyword">cd</span> applications/ik <span class="keyword">&amp;&amp;</span> python test_layer.py</code></pre>
+<pre><code><span class="comment">ASPL/</span>
+├── aspl/                  <span class="comment"># the library: polyhedral, second-order-cone and general prox-set projections</span>
+│   ├── aspl/algorithms/   <span class="comment"># forward (face identification) + exact reduced backward</span>
+│   └── aspl/problems/     <span class="comment"># parametric QP, SOCP, MPC: data generation + training CLIs</span>
+└── applications/
+    ├── ik/                <span class="comment"># chunk-level differentiable IK on Vega-1 and G1 logs</span>
+    ├── motion_planning/   <span class="comment"># maze (graph of convex sets) and multi-robot</span>
+    └── flow_matching/     <span class="comment"># hard-constrained flow-matching policies (RoboTwin 2.0)</span></code></pre>
+  </div>
+</section>
+
+<!-- ============ CITATION ============ -->
+<section class="alt" id="bibtex">
+  <div class="container">
+    <h2>BibTeX</h2>
+<pre><code>@article{tarzanagh2026aspl,
+  title={Active-Set Projection Layers for Hard-Constrained Neural Networks},
+  author={Ataee Tarzanagh, Davoud and Didari, Sima and Moon, Hankyu and Kwon, Yeongdae},
+  journal={arXiv preprint},
+  year={2026}
+}</code></pre>
+  </div>
+</section>
+
+<footer>
+  <p>ASPL <span class="sep">·</span><a href="paper.pdf" target="_blank" rel="noopener">Paper</a> <span class="sep">·</span><a href="https://huggingface.co/ASLP-Net">Code and data</a></p>
+  <p style="margin-top:8px;opacity:0.6;">Contact: sima.didari [at] gmail [dot] com &nbsp;·&nbsp; tarzanagh [at] gmail [dot] com</p>
+</footer>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="media/hero3d_cone.js"></script>
+</body>
+</html>
