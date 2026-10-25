@@ -349,6 +349,10 @@
             <div class="mini-head"><h4>Closed-loop IK, real robot logs</h4></div>
             <div class="mini-grid" id="ikbar-grid" style="grid-template-columns:1fr; gap:18px;"></div>
           </div>
+          <div class="mini-chart">
+            <div class="mini-head"><h4>Dexterous hands: Vega-1 with two XHAND1 (38 joints)</h4></div>
+            <div class="mini-grid" id="ikhand-grid" style="grid-template-columns:1fr; gap:18px;"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -467,6 +471,20 @@
       yRange: { VegaErr:[1e-13,1e2], G1Err:[1e-13,1e2], VegaViol:[0,100], G1Viol:[0,100] },
       caption: { VegaErr: "", VegaViol: "", G1Err: "", G1Viol: "" }
     },
+    ikhand: {
+      title: "Dexterous hands",
+      kind: "bar",
+      methods: IKM,
+      colors: IKC,
+      sub: { Err: "End-effector error (mm)", Lat: "Time per control step (ms)" },
+      subDefault: "Err",
+      metricLabel: { Err: "error (mm, log)", Lat: "ms (log)" },
+      subtitle: { Err: "Held-out handover episodes from our public XHand teleop data; wrists and all ten fingertips", Lat: "Batch 1; ASPL, Pink and Mink on one CPU core, the rest on GPU" },
+      series: { Err: [0.68, 0.86, 0.86, 1.06, 1.73, 6.27], Lat: [2.9, 4.2, 4.9, 165, 23, 46] },
+      log: { Err: true, Lat: true },
+      yRange: { Err: [0.1, 10], Lat: [1, 1000] },
+      caption: { Err: "", Lat: "PyRoki clips its output to the box and cuRobo treats the box as a soft cost; PyRoki and MJINX take longer than the 33 ms control period." },
+    },
     ikbar: {
       title: "Closed-loop IK, real robot logs",
       kind: "grouped",
@@ -519,6 +537,7 @@
   }
   function fmtVal(v, log) {
     if (!log) return (Math.abs(v) >= 100 || Number.isInteger(v)) ? String(v) : v.toFixed(1);
+    if (v >= 100 && v < 1e5) return String(Math.round(v));
     if (v >= 1e-2 && v < 1e3) return v.toPrecision(2);
     const e = Math.floor(Math.log10(v)), m = v / Math.pow(10, e);
     return m.toFixed(1) + "e" + e;
@@ -641,7 +660,7 @@
     });
   }
 
-  ["qp", "ik", "ikbar", "fmfail"].forEach(mountGrid);
+  ["qp", "ik", "ikbar", "ikhand", "fmfail"].forEach(mountGrid);
 })();
 </script>
 
